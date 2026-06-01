@@ -168,7 +168,7 @@ export default function TravelListRoute() {
         contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(insets.top, 12) }]}
       >
         <View style={styles.topSection}>
-          <Text style={styles.topSectionTitle}>YATRA</Text>
+          <Text style={styles.topSectionTitle}>YATRA PACKAGES</Text>
           <View style={styles.actionCardsRow}>
             <Pressable
               onPress={() => router.push('/(tabs)/travel/booking-history' as never)}
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   topSectionTitle: {
-    fontSize: 48,
+    fontSize: 34,
     fontFamily: 'serif',
     fontWeight: '700',
     color: '#3A2412',
