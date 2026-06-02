@@ -1,8 +1,7 @@
 import React from 'react';
 import { Redirect, Tabs } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/store/useAuthStore';
-import AppTabBar from '../../src/components/AppTabBar';
+import CustomTabBar from '../../src/components/CustomTabBar';
 
 export default function TabsLayout() {
   const user = useAuthStore((state) => state.user);
@@ -18,39 +17,16 @@ export default function TabsLayout() {
 
   return (
     <Tabs
-      tabBar={(props) => <AppTabBar {...props} />}
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: false,
       }}
     >
-      <Tabs.Screen
-        name="home"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="home" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="travel"
-        options={{
-          title: 'Travel',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="flight" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="notifications"
-        options={{
-          title: 'Notifications',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="notifications" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="person" color={color} size={size} />,
-        }}
-      />
+      <Tabs.Screen name="home" options={{ title: 'Home' }} />
+      <Tabs.Screen name="travel" options={{ title: 'Travel' }} />
+      <Tabs.Screen name="donate" options={{ href: null }} />
+      <Tabs.Screen name="notifications" options={{ title: 'Alerts' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>
   );
 }
