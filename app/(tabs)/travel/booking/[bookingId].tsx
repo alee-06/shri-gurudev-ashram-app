@@ -90,7 +90,7 @@ export default function BookingDetailsRoute() {
         </View>
 
         <View style={styles.summaryGrid}>
-          <SummaryTile label="Created" value={formatDate(booking.createdAt)} icon="event" />
+          <SummaryTile label="Created" value={formatDate(booking.createdAt ?? '')} icon="event" />
           <SummaryTile label="Amount" value={`INR ${booking.totalAmount.toLocaleString('en-IN')}`} icon="payments" />
           <SummaryTile label="Reference" value={booking.bookingReference} icon="confirmation-number" />
           <SummaryTile label="Review" value="Admin verification" icon="verified-user" />

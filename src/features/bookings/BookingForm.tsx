@@ -201,7 +201,7 @@ export default function BookingForm() {
 
       updateField('bookingReference', booking.bookingReference)
       router.replace({
-        pathname: '/(tabs)/travel/success',
+        pathname: '/(tabs)/travel/upload-documents/[bookingId]',
         params: {
           bookingId: booking.id,
           bookingReference: booking.bookingReference,
@@ -264,7 +264,6 @@ export default function BookingForm() {
               Preferences: <Text style={styles.boldText}>{transportType}</Text>
               {transportType === 'Train' ? ` (${busType})` : ''} / <Text style={styles.boldText}>{roomType}</Text>
             </Text>
-            <Text style={styles.heroConfigText}>Visual estimate: {formatAmount(preferencePricing.amount)} per traveler</Text>
           </View>
           <View style={styles.inclusionsRow}>
             {preferencePricing.inclusions.map((inclusion) => (

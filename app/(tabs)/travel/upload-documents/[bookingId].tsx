@@ -10,7 +10,7 @@ import { useBookingDraftStore } from '../../../../src/store/useBookingDraftStore
 export default function UploadDocumentsRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
-  const { bookingId } = useLocalSearchParams<{ bookingId: string }>()
+  const { bookingId, bookingReference } = useLocalSearchParams<{ bookingId: string; bookingReference: string }>()
   const draft = useBookingDraftStore()
 
   const pickImage = async (target: 'aadhaar' | 'selfie') => {
@@ -67,7 +67,10 @@ export default function UploadDocumentsRoute() {
         />
         <DocumentCard title="Selfie photo" label={draft.selfiePhotoLabel} uri={draft.selfiePhotoUri} onPress={() => void pickImage('selfie')} />
 
-        <Pressable style={styles.primaryButton} onPress={() => router.push('/(tabs)/travel/payment' as never)}>
+        <Pressable style={styles.primaryButton} onPress={() => router.push({
+          pathname: '/(tabs)/travel/payment',
+          params: { bookingId, bookingReference }
+        } as never)}>
           <Text style={styles.primaryButtonText}>Continue to Payment</Text>
           <MaterialIcons name="arrow-forward" size={18} color="#fff" />
         </Pressable>

@@ -3,7 +3,7 @@ import { Dimensions, Platform, Pressable, StyleSheet, Text, View } from 'react-n
 import Svg, { Path } from 'react-native-svg'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { usePathname, useRouter } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 
 /* ─── Design tokens (from reference image analysis) ─── */
@@ -96,8 +96,19 @@ type CustomTabBarProps = {
 export default function CustomTabBar({ state, navigation }: CustomTabBarProps) {
   const insets = useSafeAreaInsets()
   const router = useRouter()
+  const pathname = usePathname()
   const bottomPadding = Math.max(insets.bottom, 8)
   const totalHeight = SVG_HEIGHT + bottomPadding
+
+  // Hide tab bar during the booking flow
+  if (
+    pathname.includes('/travel/booking') ||
+    pathname.includes('/travel/upload-documents') ||
+    pathname.includes('/travel/payment') ||
+    pathname.includes('/travel/success')
+  ) {
+    return null
+  }
 
   const svgPath = getTabBarPath(SCREEN_W, SVG_HEIGHT)
 

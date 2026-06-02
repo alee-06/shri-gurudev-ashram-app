@@ -54,11 +54,11 @@ export default function SignupRoute() {
   )
 }
 
-function Input({ label, value, onChangeText, placeholder }: { label: string; value: string; onChangeText: (value: string) => void; placeholder: string }) {
+function Input({ label, value, onChangeText, placeholder, secureTextEntry }: { label: string; value: string; onChangeText: (value: string) => void; placeholder: string; secureTextEntry?: boolean }) {
   return (
     <View style={styles.inputBlock}>
       <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#9E9080" autoCapitalize="none" style={styles.input} />
+      <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#9E9080" autoCapitalize="none" secureTextEntry={secureTextEntry} style={styles.input} />
     </View>
   )
 }

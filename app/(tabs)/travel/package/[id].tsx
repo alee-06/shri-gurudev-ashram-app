@@ -46,7 +46,7 @@ export default function PackageDetailsRoute() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 12) }]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 24) + 100 }]}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.iconButton}>
             <MaterialIcons name="arrow-back" size={22} color="#8B5A00" />
@@ -116,7 +116,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 18,
-    paddingBottom: 48,
     gap: 18,
   },
   header: {

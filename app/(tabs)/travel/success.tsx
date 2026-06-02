@@ -11,6 +11,8 @@ export default function SuccessRoute() {
   const { bookingId, bookingReference } = useLocalSearchParams<{ bookingId?: string; bookingReference?: string }>()
   const resetDraft = useBookingDraftStore((state) => state.resetDraft)
 
+  const draft = useBookingDraftStore()
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -20,6 +22,9 @@ export default function SuccessRoute() {
         <Text style={styles.kicker}>Booking submitted</Text>
         <Text style={styles.title}>Your yatra request has been created.</Text>
         <View style={styles.card}>
+          <InfoRow label="Package" value={draft.selectedPackage?.title ?? 'Unknown Yatra'} />
+          <InfoRow label="Travelers" value={draft.numberOfTravelers ?? '1'} />
+          <InfoRow label="Payment Mode" value={draft.paymentMode ?? 'Pending'} />
           <InfoRow label="Booking Reference" value={bookingReference ?? 'Pending reference'} />
           <InfoRow label="Booking ID" value={bookingId ?? 'Created'} />
           <Text style={styles.note}>Your booking is pending admin verification. We will update the status after review.</Text>
