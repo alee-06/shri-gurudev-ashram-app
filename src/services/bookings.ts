@@ -1,4 +1,6 @@
 import api from "../api/axiosClient";
+import { getSupabaseClient } from "../lib/supabase";
+import type { Database } from "../types/database.types";
 import { Booking, BookingStatus, CreateBookingInput } from "../types/travel";
 import { getFriendlyApiError } from "../utils/apiErrors";
 
@@ -22,9 +24,15 @@ type BookingApiRow = {
   bus_type?: string | null;
   room_type?: string | null;
 };
+type PackageSelection = Pick<Database["public"]["Tables"]["travel_packages"]["Row"], "title" | "start_date" | "end_date"> | null;
+type BookingHistoryRow = BookingApiRow & {
+  travel_packages: PackageSelection;
+};
 
 function mapBookingStatus(status: string): BookingStatus {
   if (
+    status === "pending" ||
+    status === "confirmed" ||
     status === "payment_pending" ||
     status === "paid" ||
     status === "cancelled" ||
@@ -36,11 +44,14 @@ function mapBookingStatus(status: string): BookingStatus {
   return "payment_pending";
 }
 
-function mapBookingRow(row: BookingApiRow): Booking {
+function mapBookingRow(row: BookingApiRow, options?: { packageTitle?: string; travelStartDate?: string | null; travelEndDate?: string | null }): Booking {
   return {
     id: row.id,
     bookingReference: row.booking_reference,
     packageId: row.package_id,
+    packageTitle: options?.packageTitle,
+    travelStartDate: options?.travelStartDate,
+    travelEndDate: options?.travelEndDate,
     userId: row.user_id,
     travelerCount: row.traveler_count,
     specialNotes: row.special_notes,
@@ -93,10 +104,33 @@ export async function createBooking(
 
 export async function getBookingsByUser(_userId?: string): Promise<Booking[]> {
   try {
-    const { data } = await api.get<{ bookings: BookingApiRow[] }>(
-      "/api/bookings",
+    const supabase = getSupabaseClient();
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError || !sessionData.session?.user) {
+      throw new Error("Please sign in to view your bookings.");
+    }
+
+    const { data, error } = await supabase
+      .from("bookings")
+      .select("*, travel_packages(title, start_date, end_date)")
+      .eq("user_id", sessionData.session.user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const bookings = (data ?? []) as unknown as BookingHistoryRow[];
+
+    return bookings.map((booking) =>
+      mapBookingRow(booking, {
+        packageTitle: booking.travel_packages?.title,
+        travelStartDate: booking.travel_packages?.start_date ?? null,
+        travelEndDate: booking.travel_packages?.end_date ?? null,
+      }),
     );
-    return data.bookings.map(mapBookingRow);
   } catch (error) {
     throw new Error(
       getFriendlyApiError(

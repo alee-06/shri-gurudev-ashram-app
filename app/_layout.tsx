@@ -7,8 +7,10 @@ import { queryClient } from '../src/api/queryClient';
 import { getCurrentUser } from '../src/services/auth';
 import { getSupabaseClient } from '../src/lib/supabase';
 import { useAuthStore } from '../src/store/useAuthStore';
+import { registerPushToken } from '../src/services/pushTokenService';
 
 export default function RootLayout() {
+  const user = useAuthStore((state) => state.user)
   const setUser = useAuthStore((state) => state.setUser)
   const clearUser = useAuthStore((state) => state.clearUser)
   const setHydrated = useAuthStore((state) => state.setHydrated)
@@ -80,6 +82,16 @@ export default function RootLayout() {
       authListener.subscription.unsubscribe()
     }
   }, [clearUser, setHydrated, setUser])
+
+  React.useEffect(() => {
+    if (!user?.id) {
+      return
+    }
+
+    registerPushToken(user.id).catch((error) => {
+      console.warn('[pushToken] registration failed.', error)
+    })
+  }, [user?.id])
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

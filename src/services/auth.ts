@@ -16,17 +16,26 @@ export type AuthUser = {
   email: string | null;
   phone: string;
   role: string;
+  profileImageUrl: string | null;
   verificationStatus: VerificationStatus;
   aadhaarNumber: string | null;
   aadhaarImagePath: string | null;
   selfieImagePath: string | null;
   createdAt?: string;
+  deletedAt: string | null;
 };
 
 type AuthMetadata = {
   full_name?: string;
   phone?: string;
 };
+
+class AccountDeletedError extends Error {
+  constructor() {
+    super("This account has been deactivated.");
+    this.name = "AccountDeletedError";
+  }
+}
 
 function logAuthError(error: unknown) {
   console.warn(JSON.stringify(error, null, 2));
@@ -60,18 +69,24 @@ function toReadableAuthError(error: unknown, fallbackMessage: string) {
 }
 
 function mapUserRow(row: UserRow): AuthUser {
+  if (row.deleted_at) {
+    throw new AccountDeletedError();
+  }
+
   return {
     id: row.id,
     fullName: row.full_name,
     email: row.email,
     phone: row.phone,
     role: row.role,
+    profileImageUrl: row.profile_image_url || null,
     verificationStatus:
       (row.verification_status as VerificationStatus) || "not_submitted",
     aadhaarNumber: row.aadhaar_number || null,
     aadhaarImagePath: row.aadhaar_image_path || null,
     selfieImagePath: row.selfie_image_path || null,
     createdAt: row.created_at || undefined,
+    deletedAt: row.deleted_at || null,
   };
 }
 
@@ -86,11 +101,13 @@ function mapFallbackAuthUser(user: {
     email: user.email ?? null,
     phone: user.user_metadata?.phone?.trim() || "",
     role: "user",
+    profileImageUrl: null,
     verificationStatus: "not_submitted",
     aadhaarNumber: null,
     aadhaarImagePath: null,
     selfieImagePath: null,
     createdAt: undefined,
+    deletedAt: null,
   };
 }
 
@@ -169,10 +186,12 @@ export async function signUp(
     email: data.user.email ?? email.trim() ?? null,
     phone: phone.trim(),
     role: "user",
+    profileImageUrl: null,
     verificationStatus: "not_submitted",
     aadhaarNumber: null,
     aadhaarImagePath: null,
     selfieImagePath: null,
+    deletedAt: null,
   };
 }
 
@@ -199,7 +218,15 @@ export async function signIn(
     throw new Error("Signin succeeded but Supabase did not return a user.");
   }
 
-  return getProfileForAuthUser(data.user);
+  try {
+    return await getProfileForAuthUser(data.user);
+  } catch (error) {
+    if (error instanceof AccountDeletedError) {
+      await supabase.auth.signOut();
+    }
+
+    throw error;
+  }
 }
 
 export async function signOut(): Promise<void> {
@@ -231,7 +258,12 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 
   try {
     return await getProfileForAuthUser(authUser);
-  } catch {
+  } catch (error) {
+    if (error instanceof AccountDeletedError) {
+      await supabase.auth.signOut();
+      return null;
+    }
+
     return mapFallbackAuthUser(authUser);
   }
 }

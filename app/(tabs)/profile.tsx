@@ -1,168 +1,223 @@
 import React from 'react'
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
 import { Image } from 'expo-image'
+import * as Linking from 'expo-linking'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons, MaterialIcons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { donationCategoriesMock, profileData, savedEventsMock, upcomingYatrasMock } from '../../src/services/profileMockData'
 import { signOut } from '../../src/services/auth'
-import { refreshCurrentUser } from '../../src/services/auth'
+import { getCurrentProfileInfo, getCurrentUserYatraStats, softDeleteCurrentUser, type ProfileInfo, type YatraStats } from '../../src/services/profile'
 import { useAuthStore } from '../../src/store/useAuthStore'
 import { useBookingDraftStore } from '../../src/store/useBookingDraftStore'
+
+const SUPPORT_CONFIG = {
+  phone: '+91-XXXXXXXXXX',
+  whatsapp: '+91-XXXXXXXXXX',
+  email: 'support@example.com',
+}
+
+type MaterialIconName = React.ComponentProps<typeof MaterialIcons>['name']
+type IonIconName = React.ComponentProps<typeof Ionicons>['name']
+
+const EMPTY_STATS: YatraStats = {
+  totalBookings: 0,
+  upcomingYatras: 0,
+  completedYatras: 0,
+  pendingPayments: 0,
+}
 
 export default function ProfileRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
-  const user = useAuthStore((state) => state.user)
+  const storeUser = useAuthStore((state) => state.user)
   const logout = useAuthStore((state) => state.logout)
   const resetDraft = useBookingDraftStore((state) => state.resetDraft)
   const clearAadhaar = useAuthStore((state) => state.setAadhaarNumber)
   const clearTemporaryAadhaarUri = useAuthStore((state) => state.setTemporaryAadhaarUri)
   const clearTemporarySelfieUri = useAuthStore((state) => state.setTemporarySelfieUri)
+  const [profile, setProfile] = React.useState<ProfileInfo | null>(null)
+  const [stats, setStats] = React.useState<YatraStats>(EMPTY_STATS)
+  const [isLoading, setIsLoading] = React.useState(true)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
+  const [isDeleting, setIsDeleting] = React.useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [errorMessage, setErrorMessage] = React.useState('')
-  const isCollector = user?.role === 'collector'
-  const verificationStatus = user?.verificationStatus ?? 'not_submitted'
+  const isCollector = storeUser?.role === 'collector'
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true)
+  const loadProfile = React.useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setIsRefreshing(true)
+    } else {
+      setIsLoading(true)
+    }
+
     setErrorMessage('')
 
     try {
-      await refreshCurrentUser()
+      const [profileInfo, yatraStats] = await Promise.all([
+        getCurrentProfileInfo(),
+        getCurrentUserYatraStats(),
+      ])
+      setProfile(profileInfo)
+      setStats(yatraStats)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not refresh profile right now.')
+      setErrorMessage(error instanceof Error ? error.message : 'Could not load your profile right now.')
     } finally {
+      setIsLoading(false)
       setIsRefreshing(false)
     }
-  }
+  }, [])
+
+  React.useEffect(() => {
+    void loadProfile()
+  }, [loadProfile])
+
+  const clearLocalSession = React.useCallback(() => {
+    logout()
+    resetDraft()
+    clearAadhaar('')
+    clearTemporaryAadhaarUri(null)
+    clearTemporarySelfieUri(null)
+  }, [clearAadhaar, clearTemporaryAadhaarUri, clearTemporarySelfieUri, logout, resetDraft])
 
   const handleLogout = async () => {
     try {
       await signOut()
-      logout()
-      resetDraft()
-      clearAadhaar('')
-      clearTemporaryAadhaarUri(null)
-      clearTemporarySelfieUri(null)
+      clearLocalSession()
       router.replace('/(auth)/splash' as never)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not log out right now.')
     }
   }
 
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true)
+    setErrorMessage('')
+
+    try {
+      await softDeleteCurrentUser()
+      await signOut()
+      clearLocalSession()
+      setShowDeleteConfirm(false)
+      router.replace('/(auth)/splash' as never)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not delete your account right now.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const openSupportLink = async (url: string) => {
+    try {
+      await Linking.openURL(url)
+    } catch {
+      setErrorMessage('Could not open this support option on your device.')
+    }
+  }
+
+  const displayProfile = profile ?? {
+    id: storeUser?.id ?? '',
+    fullName: storeUser?.fullName ?? 'Devotee',
+    email: storeUser?.email ?? null,
+    phone: storeUser?.phone ?? '',
+    memberSince: '',
+    profileImageUrl: storeUser?.profileImageUrl ?? null,
+    aadhaarNumber: storeUser?.aadhaarNumber ?? null,
+    verificationStatus: storeUser?.verificationStatus ?? 'not_submitted',
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void loadProfile(true)} />}
         contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 16) }]}
       >
         <View style={styles.header}>
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>{user?.fullName?.charAt(0) || 'D'}</Text>
-          </View>
+          <Avatar profile={displayProfile} />
           <View style={styles.headerCopy}>
             <Text style={styles.greeting}>Jai Gurudev</Text>
-            <Text style={styles.name}>{user?.fullName || 'Devotee'}</Text>
+            <Text style={styles.name}>{displayProfile.fullName || 'Devotee'}</Text>
           </View>
           <Pressable style={styles.bellIcon} onPress={() => router.push('/(tabs)/notifications' as never)}>
             <Ionicons name="notifications-outline" size={24} color="#2B231B" />
-            <View style={styles.bellBadge} />
           </Pressable>
         </View>
 
-        <LinearGradient colors={['#ffffff', '#FCFAF6']} style={styles.heroCard}>
-          <View style={styles.heroTop}>
-            <View>
-              <Text style={styles.memberId}>ID: SD-99281</Text>
-              <Text style={styles.memberSince}>Member since {profileData.memberSince}</Text>
-            </View>
-            <View style={styles.heroBadge}>
-              <MaterialIcons name="verified" size={16} color="#B97512" />
-            </View>
+        {isLoading ? (
+          <View style={styles.stateCard}>
+            <ActivityIndicator size="large" color="#8B5A00" />
+            <Text style={styles.stateText}>Loading your profile</Text>
           </View>
-          <View style={styles.heroStats}>
-            <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatValue}>{profileData.completedYatras}</Text>
-              <Text style={styles.heroStatLabel}>Completed Yatras</Text>
-            </View>
-            <View style={styles.heroDivider} />
-            <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatValue}>{profileData.upcomingYatras}</Text>
-              <Text style={styles.heroStatLabel}>Upcoming Yatras</Text>
-            </View>
+        ) : null}
+
+        {errorMessage ? (
+          <View style={styles.errorCard}>
+            <Text style={styles.inlineError}>{errorMessage}</Text>
+            <Pressable style={styles.retryButton} onPress={() => void loadProfile()}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </Pressable>
           </View>
+        ) : null}
+
+        <LinearGradient colors={['#ffffff', '#FCFAF6']} style={styles.profileCard}>
+          <View style={styles.profileTop}>
+            <View style={styles.profileCopy}>
+              <ProfileInfoRow icon="mail-outline" value={displayProfile.email ?? 'Email unavailable'} />
+              <ProfileInfoRow icon="call-outline" value={displayProfile.phone || 'Phone unavailable'} />
+              <ProfileInfoRow icon="calendar-outline" value={`Member since: ${formatMonthYear(displayProfile.memberSince)}`} />
+            </View>
+            <Pressable style={styles.editButton} onPress={() => router.push('/edit-profile' as never)}>
+              <MaterialIcons name="edit" size={18} color="#993D00" />
+              <Text style={styles.editButtonText}>Edit</Text>
+            </Pressable>
+          </View>
+          <VerificationBadge status={displayProfile.verificationStatus} onPress={() => router.push('/verify-identity' as never)} />
         </LinearGradient>
-
-        <VerificationCard
-          verificationStatus={verificationStatus}
-          onPress={() => router.push('/verify-identity' as never)}
-        />
-
-        {errorMessage ? <Text style={styles.inlineError}>{errorMessage}</Text> : null}
-
-        <View style={styles.quickActionsRow}>
-          <QuickActionCard icon="event-note" label="My Bookings" onPress={() => router.push('/(tabs)/travel/booking-history' as never)} />
-          <QuickActionCard icon="volunteer-activism" label="Donations" onPress={() => undefined} />
-          <QuickActionCard icon="map" label="Routes" onPress={() => router.push('/(tabs)/travel' as never)} />
-          <QuickActionCard icon="headset-mic" label="Support" onPress={() => router.push('/help-support' as never)} />
-        </View>
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>My Yatras</Text>
             <Pressable onPress={() => router.push('/(tabs)/travel/booking-history' as never)}>
-              <Text style={styles.seeAll}>See All</Text>
+              <Text style={styles.seeAll}>My Bookings</Text>
             </Pressable>
           </View>
-          {upcomingYatrasMock.map((yatra) => (
-            <View key={yatra.id} style={styles.yatraCard}>
-              <Image source={{ uri: yatra.image }} style={styles.yatraImage} contentFit="cover" />
-              <View style={styles.yatraDetails}>
-                <View style={styles.yatraStatusBadge}>
-                  <Text style={styles.yatraStatusText}>{yatra.status}</Text>
-                </View>
-                <Text style={styles.yatraDestination}>{yatra.destination}</Text>
-                <Text style={styles.yatraDate}>{yatra.date}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Spiritual Contributions</Text>
-          <View style={styles.donationsGrid}>
-            <View style={styles.donationBox}>
-              <MaterialIcons name="volunteer-activism" size={20} color="#E65C00" style={{ marginBottom: 8 }} />
-              <Text style={styles.donationAmount}>{profileData.totalDonations}</Text>
-              <Text style={styles.donationLabel}>Total Donated</Text>
-            </View>
-            <View style={styles.donationBoxList}>
-              {donationCategoriesMock.map((cat) => (
-                <View key={cat.id} style={styles.donationCatRow}>
-                  <Text style={styles.donationCatTitle}>{cat.title}</Text>
-                  <Text style={styles.donationCatAmount}>{cat.amount}</Text>
-                </View>
-              ))}
-            </View>
+          <View style={styles.statsGrid}>
+            <StatCard icon="confirmation-number" label="Total Bookings" value={stats.totalBookings} />
+            <StatCard icon="event-available" label="Upcoming Yatras" value={stats.upcomingYatras} />
+            <StatCard icon="verified" label="Completed Yatras" value={stats.completedYatras} />
+            <StatCard icon="payments" label="Pending Payments" value={stats.pendingPayments} />
           </View>
+          {stats.totalBookings === 0 ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No bookings yet</Text>
+              <Text style={styles.emptyText}>Your yatra booking summary will appear here once you book from Supabase.</Text>
+            </View>
+          ) : null}
+          <Pressable style={styles.bookingsShortcut} onPress={() => router.push('/(tabs)/travel/booking-history' as never)}>
+            <MaterialIcons name="event-note" size={22} color="#993D00" />
+            <Text style={styles.bookingsShortcutText}>My Bookings</Text>
+            <MaterialIcons name="chevron-right" size={22} color="#D7C7B8" />
+          </Pressable>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Saved Events</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.eventsScroll}>
-            {savedEventsMock.map((event) => (
-              <View key={event.id} style={styles.eventCard}>
-                <Image source={{ uri: event.image }} style={styles.eventImage} contentFit="cover" />
-                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.82)']} style={styles.eventGradient}>
-                  <Text style={styles.eventDate}>{event.date}</Text>
-                  <Text style={styles.eventTitle}>{event.title}</Text>
-                </LinearGradient>
-              </View>
-            ))}
-          </ScrollView>
+          <Text style={styles.sectionTitle}>Help & Support</Text>
+          <View style={styles.settingsCard}>
+            <SettingsRow icon="call-outline" label="Call Support" onPress={() => void openSupportLink(`tel:${SUPPORT_CONFIG.phone}`)} />
+            <SettingsRow icon="logo-whatsapp" label="WhatsApp Support" onPress={() => void openSupportLink(`https://wa.me/${SUPPORT_CONFIG.whatsapp.replace(/[^\d]/g, '')}`)} />
+            <SettingsRow icon="mail-outline" label="Email Support" onPress={() => void openSupportLink(`mailto:${SUPPORT_CONFIG.email}`)} />
+          </View>
         </View>
 
         {isCollector ? (
@@ -179,125 +234,199 @@ export default function ProfileRoute() {
 
         <View style={styles.settingsCard}>
           <SettingsRow icon="settings-outline" label="Settings" onPress={() => router.push('/settings' as never)} />
-          <SettingsRow icon="help-circle-outline" label="Help and Support" onPress={() => router.push('/help-support' as never)} />
-          <SettingsRow
-            icon="log-out-outline"
-            label="Logout"
-            onPress={() => void handleLogout()}
-          />
+          <SettingsRow icon="log-out-outline" label="Logout" onPress={() => void handleLogout()} />
+          <SettingsRow icon="trash-outline" label="Delete Account" destructive onPress={() => setShowDeleteConfirm(true)} />
         </View>
       </ScrollView>
+      <DeleteAccountModal
+        visible={showDeleteConfirm}
+        isDeleting={isDeleting}
+        onCancel={() => setShowDeleteConfirm(false)}
+        onDelete={() => void handleDeleteAccount()}
+      />
     </SafeAreaView>
   )
 }
 
-function VerificationCard({ verificationStatus, onPress }: { verificationStatus: 'not_submitted' | 'submitted' | 'verified' | 'rejected'; onPress: () => void }) {
-  const tone =
-    verificationStatus === 'verified'
-      ? { icon: 'verified', background: '#F1F8E9', border: '#C5E1A5', color: '#2E7D32', title: 'Identity Verified', subtitle: 'Your identity has been verified.' }
-      : verificationStatus === 'submitted'
-        ? { icon: 'schedule', background: '#FFF8ED', border: '#FFE0B3', color: '#B97512', title: 'Verification Submitted', subtitle: 'Your documents are under review.' }
-        : verificationStatus === 'rejected'
-          ? { icon: 'cancel', background: '#FFF1F1', border: '#F3C4C4', color: '#C62828', title: 'Verification Rejected', subtitle: 'Please resubmit your documents.' }
-          : { icon: 'person-outline', background: '#FFF8ED', border: '#FFE0B3', color: '#E65C00', title: 'Verify Identity', subtitle: 'Upload Aadhaar and selfie to unlock bookings.' }
+function Avatar({ profile }: { profile: ProfileInfo }) {
+  if (profile.profileImageUrl) {
+    return <Image source={{ uri: profile.profileImageUrl }} style={styles.avatarImage} contentFit="cover" />
+  }
 
   return (
-    <Pressable onPress={onPress} style={[styles.verifyCard, { backgroundColor: tone.background, borderColor: tone.border }]}>
-      <MaterialIcons name={tone.icon as any} size={24} color={tone.color} />
+    <View style={styles.avatarPlaceholder}>
+      <Text style={styles.avatarText}>{profile.fullName?.charAt(0) || 'D'}</Text>
+    </View>
+  )
+}
+
+function VerificationBadge({ status, onPress }: { status: ProfileInfo['verificationStatus']; onPress: () => void }) {
+  const tone = getVerificationTone(status)
+
+  return (
+    <Pressable onPress={onPress} style={[styles.verificationBadge, { backgroundColor: tone.background, borderColor: tone.border }]}>
+      <MaterialIcons name={tone.icon} size={20} color={tone.color} />
       <View style={styles.verifyCopy}>
-        <Text style={[styles.verifyTitle, { color: tone.color }]}>{tone.title}</Text>
+        <Text style={[styles.verifyTitle, { color: tone.color }]}>{tone.label}</Text>
         <Text style={styles.verifySubtitle}>{tone.subtitle}</Text>
       </View>
-      <MaterialIcons name="chevron-right" size={24} color="#D7C7B8" />
+      {status === 'rejected' || status === 'not_submitted' ? <MaterialIcons name="chevron-right" size={22} color="#D7C7B8" /> : null}
     </Pressable>
   )
 }
 
-function QuickActionCard({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
+function ProfileInfoRow({ icon, value }: { icon: IonIconName; value: string }) {
   return (
-    <Pressable onPress={onPress} style={styles.quickActionCard}>
-      <View style={styles.quickActionIcon}>
-        <MaterialIcons name={icon as any} size={24} color="#993D00" />
-      </View>
-      <Text style={styles.quickActionLabel}>{label}</Text>
-    </Pressable>
+    <View style={styles.profileInfoRow}>
+      <Ionicons name={icon} size={18} color="#8B5A00" />
+      <Text style={styles.profileMeta}>{value}</Text>
+    </View>
   )
 }
 
-function SettingsRow({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
+function getVerificationTone(status: ProfileInfo['verificationStatus']): {
+  icon: MaterialIconName
+  background: string
+  border: string
+  color: string
+  label: string
+  subtitle: string
+} {
+  if (status === 'verified') {
+    return { icon: 'verified', background: '#F1F8E9', border: '#C5E1A5', color: '#2E7D32', label: 'Verified', subtitle: 'Your identity has been verified.' }
+  }
+
+  if (status === 'submitted') {
+    return { icon: 'schedule', background: '#FFF8ED', border: '#FFE0B3', color: '#B97512', label: 'Under Review', subtitle: 'Your documents are being reviewed.' }
+  }
+
+  if (status === 'rejected') {
+    return { icon: 'cancel', background: '#FFF1F1', border: '#F3C4C4', color: '#C62828', label: 'Rejected', subtitle: 'Tap to resubmit your verification.' }
+  }
+
+  return { icon: 'person-outline', background: '#F4F0EA', border: '#DED6CE', color: '#7E7162', label: 'Not Submitted', subtitle: 'Tap to upload verification documents.' }
+}
+
+function StatCard({ icon, label, value }: { icon: MaterialIconName; label: string; value: number }) {
+  return (
+    <View style={styles.statCard}>
+      <MaterialIcons name={icon} size={22} color="#993D00" />
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  )
+}
+
+function SettingsRow({
+  icon,
+  label,
+  destructive = false,
+  onPress,
+}: {
+  icon: IonIconName
+  label: string
+  destructive?: boolean
+  onPress: () => void
+}) {
   return (
     <Pressable onPress={onPress} style={styles.settingsRow}>
       <View style={styles.settingsRowLeft}>
-        <Ionicons name={icon as any} size={22} color="#7E7162" />
-        <Text style={styles.settingsRowLabel}>{label}</Text>
+        <Ionicons name={icon} size={22} color={destructive ? '#B3261E' : '#7E7162'} />
+        <Text style={[styles.settingsRowLabel, destructive && styles.destructiveText]}>{label}</Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color="#D7C7B8" />
     </Pressable>
   )
 }
 
+function DeleteAccountModal({
+  visible,
+  isDeleting,
+  onCancel,
+  onDelete,
+}: {
+  visible: boolean
+  isDeleting: boolean
+  onCancel: () => void
+  onDelete: () => void
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Delete Account</Text>
+          <Text style={styles.modalText}>This will permanently deactivate your account. You will be logged out and will not be able to access your data.</Text>
+          <View style={styles.modalActions}>
+            <Pressable disabled={isDeleting} style={styles.cancelButton} onPress={onCancel}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable disabled={isDeleting} style={[styles.deleteButton, isDeleting && styles.disabledButton]} onPress={onDelete}>
+              {isDeleting ? <ActivityIndicator size="small" color="#fff" /> : null}
+              <Text style={styles.deleteButtonText}>Delete Account</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  )
+}
+
+function formatMonthYear(value: string) {
+  if (!value) {
+    return 'Unavailable'
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAF6F0' },
-  content: { paddingHorizontal: 18, paddingBottom: 120, gap: 20 },
+  content: { paddingHorizontal: 18, paddingBottom: 120, gap: 18 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarPlaceholder: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFF0D9', alignItems: 'center', justifyContent: 'center' },
+  avatarImage: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFF0D9' },
   avatarText: { color: '#993D00', fontSize: 22, fontWeight: '900' },
   headerCopy: { flex: 1 },
   greeting: { color: '#E65C00', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.2 },
   name: { color: '#2B231B', fontSize: 22, fontWeight: '900', marginTop: 2 },
   bellIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  bellBadge: { position: 'absolute', top: 10, right: 11, width: 8, height: 8, borderRadius: 4, backgroundColor: '#E65C00' },
-  heroCard: { borderRadius: 30, padding: 20, borderWidth: 1, borderColor: '#F0E7DD' },
-  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  memberId: { color: '#993D00', fontSize: 13, fontWeight: '900' },
-  memberSince: { color: '#7E7162', fontSize: 12, marginTop: 4, fontWeight: '700' },
-  heroBadge: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#FFF0D9', alignItems: 'center', justifyContent: 'center' },
-  heroStats: { flexDirection: 'row', alignItems: 'center', marginTop: 22 },
-  heroStatItem: { flex: 1, alignItems: 'center' },
-  heroStatValue: { color: '#2B231B', fontSize: 28, fontWeight: '900' },
-  heroStatLabel: { color: '#7E7162', fontSize: 12, fontWeight: '700', marginTop: 4 },
-  heroDivider: { width: 1, height: 44, backgroundColor: '#F0E7DD' },
-  verifyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderRadius: 24,
-    padding: 16,
-    borderWidth: 1.5,
-  },
-  verifyCopy: { flex: 1 },
-  verifyTitle: { color: '#2B231B', fontSize: 16, fontWeight: '900' },
-  verifySubtitle: { color: '#7E7162', fontSize: 12, marginTop: 4, fontWeight: '700' },
-  inlineError: { color: '#B00020', fontSize: 13, fontWeight: '700' },
-  quickActionsRow: { flexDirection: 'row', gap: 10 },
-  quickActionCard: { flex: 1, backgroundColor: '#fff', borderRadius: 22, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: '#F0E7DD' },
-  quickActionIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#FFF0D9', alignItems: 'center', justifyContent: 'center' },
-  quickActionLabel: { color: '#2B231B', fontSize: 11, fontWeight: '900', marginTop: 8, textAlign: 'center' },
+  stateCard: { backgroundColor: '#fff', borderRadius: 24, padding: 20, alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#F0E7DD' },
+  stateText: { color: '#7E7162', fontSize: 13, fontWeight: '800' },
+  errorCard: { backgroundColor: '#FFF7EB', borderRadius: 20, padding: 14, borderWidth: 1, borderColor: '#FFE0B3', gap: 10 },
+  inlineError: { color: '#B3261E', fontSize: 13, fontWeight: '700' },
+  retryButton: { alignSelf: 'flex-start', backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
+  retryButtonText: { color: '#8B5A00', fontSize: 12, fontWeight: '900' },
+  profileCard: { borderRadius: 28, padding: 18, borderWidth: 1, borderColor: '#F0E7DD', gap: 16 },
+  profileTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  profileCopy: { flex: 1, gap: 5 },
+  profileInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  profileMeta: { color: '#7E7162', fontSize: 13, fontWeight: '700' },
+  memberSince: { color: '#993D00', fontSize: 12, fontWeight: '900', marginTop: 4 },
+  editButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF0D9', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 9 },
+  editButtonText: { color: '#993D00', fontSize: 13, fontWeight: '900' },
+  verificationBadge: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, padding: 14, borderWidth: 1.5 },
+  verifyCopy: { flex: 1, gap: 4 },
+  verifyTitle: { fontSize: 15, fontWeight: '900' },
+  verifySubtitle: { color: '#7E7162', fontSize: 12, fontWeight: '700', lineHeight: 17 },
   section: { gap: 12 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sectionTitle: { color: '#2B231B', fontSize: 20, fontWeight: '900' },
   seeAll: { color: '#E65C00', fontSize: 13, fontWeight: '900' },
-  yatraCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 24, padding: 12, gap: 12, borderWidth: 1, borderColor: '#F0E7DD' },
-  yatraImage: { width: 88, height: 88, borderRadius: 18 },
-  yatraDetails: { flex: 1, justifyContent: 'center' },
-  yatraStatusBadge: { alignSelf: 'flex-start', backgroundColor: '#FFF0D9', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  yatraStatusText: { color: '#993D00', fontSize: 11, fontWeight: '900' },
-  yatraDestination: { color: '#2B231B', fontSize: 16, fontWeight: '900', marginTop: 8 },
-  yatraDate: { color: '#7E7162', fontSize: 13, marginTop: 4 },
-  donationsGrid: { flexDirection: 'row', gap: 12 },
-  donationBox: { flex: 1, backgroundColor: '#FFF9F0', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#F0E7DD' },
-  donationAmount: { color: '#2B231B', fontSize: 20, fontWeight: '900' },
-  donationLabel: { color: '#7E7162', fontSize: 12, marginTop: 4, fontWeight: '700' },
-  donationBoxList: { flex: 1, backgroundColor: '#fff', borderRadius: 24, padding: 14, gap: 10, borderWidth: 1, borderColor: '#F0E7DD' },
-  donationCatRow: { gap: 2 },
-  donationCatTitle: { color: '#7E7162', fontSize: 12, fontWeight: '800' },
-  donationCatAmount: { color: '#993D00', fontSize: 14, fontWeight: '900' },
-  eventsScroll: { gap: 12, paddingRight: 18 },
-  eventCard: { width: 210, height: 150, borderRadius: 24, overflow: 'hidden', backgroundColor: '#2B231B' },
-  eventImage: { ...StyleSheet.absoluteFill },
-  eventGradient: { flex: 1, justifyContent: 'flex-end', padding: 14 },
-  eventDate: { color: '#FFF0D9', fontSize: 11, fontWeight: '900' },
-  eventTitle: { color: '#fff', fontSize: 15, fontWeight: '900', marginTop: 4 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  statCard: { width: '48%', minHeight: 128, backgroundColor: '#fff', borderRadius: 22, padding: 14, borderWidth: 1, borderColor: '#F0E7DD', justifyContent: 'space-between' },
+  statValue: { color: '#2B231B', fontSize: 28, fontWeight: '900', marginTop: 8 },
+  statLabel: { color: '#7E7162', fontSize: 12, fontWeight: '800', lineHeight: 16 },
+  emptyCard: { backgroundColor: '#FFF', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: '#F0E7DD', gap: 4 },
+  emptyTitle: { color: '#2B231B', fontSize: 15, fontWeight: '900' },
+  emptyText: { color: '#7E7162', fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  bookingsShortcut: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 22, paddingHorizontal: 16, borderWidth: 1, borderColor: '#F0E7DD' },
+  bookingsShortcutText: { flex: 1, color: '#2B231B', fontSize: 15, fontWeight: '900' },
   collectorCard: { borderRadius: 24, overflow: 'hidden' },
   collectorGradient: { padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14 },
   collectorCopy: { flex: 1 },
@@ -305,6 +434,17 @@ const styles = StyleSheet.create({
   collectorText: { color: 'rgba(255,255,255,0.82)', fontSize: 13, marginTop: 4 },
   settingsCard: { backgroundColor: '#fff', borderRadius: 24, paddingHorizontal: 16, borderWidth: 1, borderColor: '#F0E7DD' },
   settingsRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#F5EDE4' },
-  settingsRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  settingsRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   settingsRowLabel: { color: '#2B231B', fontSize: 15, fontWeight: '800' },
+  destructiveText: { color: '#B3261E' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(43,35,27,0.44)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  modalCard: { width: '100%', borderRadius: 26, backgroundColor: '#fff', padding: 20, gap: 14 },
+  modalTitle: { color: '#2B231B', fontSize: 20, fontWeight: '900' },
+  modalText: { color: '#7E7162', fontSize: 14, fontWeight: '600', lineHeight: 21 },
+  modalActions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
+  cancelButton: { borderRadius: 999, backgroundColor: '#F4F0EA', paddingHorizontal: 16, paddingVertical: 12 },
+  cancelButtonText: { color: '#2B231B', fontSize: 13, fontWeight: '900' },
+  deleteButton: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 999, backgroundColor: '#B3261E', paddingHorizontal: 16, paddingVertical: 12 },
+  deleteButtonText: { color: '#fff', fontSize: 13, fontWeight: '900' },
+  disabledButton: { opacity: 0.7 },
 })

@@ -4,7 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { getBookingsByUser } from '../../../src/services'
-import { Booking } from '../../../src/types/travel'
+import { Booking, BookingStatus } from '../../../src/types/travel'
 
 export default function BookingHistoryRoute() {
   const router = useRouter()
@@ -33,15 +33,11 @@ export default function BookingHistoryRoute() {
     try {
       const bookingData = await getBookingsByUser()
       setBookings(bookingData)
-    } catch (error) {
+    } catch {
       setErrorMessage('We could not load your bookings right now. Please try again.')
     } finally {
-      if (isRefresh) {
-        setIsRefreshing(false)
-      } else {
-        setIsLoading(false)
-      }
-
+      setIsRefreshing(false)
+      setIsLoading(false)
       isFetchingRef.current = false
     }
   }, [])
@@ -51,6 +47,8 @@ export default function BookingHistoryRoute() {
   }, [loadBookings])
 
   const renderBookingCard = React.useCallback(({ item }: { item: Booking }) => {
+    const bookingStatusTone = getBookingStatusTone(item.status)
+
     return (
       <Pressable style={styles.card} onPress={() => router.push(`/(tabs)/travel/booking/${item.id}` as never)}>
         <View style={styles.cardTop}>
@@ -58,20 +56,22 @@ export default function BookingHistoryRoute() {
             <MaterialIcons name="event-note" size={22} color="#8B5A00" />
           </View>
           <View style={styles.cardCopy}>
-            <Text style={styles.cardTitle}>{item.bookingReference}</Text>
-            <Text style={styles.cardMeta}>{formatCreatedAt(item.createdAt)}</Text>
+            <Text style={styles.cardTitle}>{item.packageTitle || 'Yatra'}</Text>
+            <Text style={styles.cardMeta}>{formatTravelDateRange(item.travelStartDate, item.travelEndDate)}</Text>
           </View>
-          <View style={styles.statusPill}>
-            <Text style={styles.statusText}>{formatStatus(item.status)}</Text>
+          <View style={[styles.statusPill, { backgroundColor: bookingStatusTone.background }]}>
+            <Text style={[styles.statusText, { color: bookingStatusTone.color }]}>{bookingStatusTone.label}</Text>
           </View>
         </View>
+
         <View style={styles.divider} />
-        <View style={styles.cardBottom}>
-          <View style={styles.packageBlock}>
-            <Text style={styles.cardLabel}>Package ID</Text>
-            <Text style={styles.bookingId}>{item.packageId}</Text>
+
+        <View style={styles.cardBody}>
+          <View>
+            <Text style={styles.cardLabel}>Booking Ref:</Text>
+            <Text style={styles.reference}>{item.bookingReference}</Text>
           </View>
-          <Text style={styles.amount}>{formatAmount(item.totalAmount)}</Text>
+          <Text style={styles.tripMeta}>{formatTravelerCount(item.travelerCount)} • {formatAmount(item.totalAmount)}</Text>
         </View>
       </Pressable>
     )
@@ -81,15 +81,7 @@ export default function BookingHistoryRoute() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={[styles.loadingState, { paddingTop: Math.max(insets.top, 16) }]}>
-          <View style={styles.header}>
-            <Pressable style={styles.backButton} onPress={() => router.back()}>
-              <MaterialIcons name="arrow-back" size={22} color="#8B5A00" />
-            </Pressable>
-            <View>
-              <Text style={styles.kicker}>Yatra records</Text>
-              <Text style={styles.title}>Booking History</Text>
-            </View>
-          </View>
+          <Header onBack={() => router.back()} />
           <View style={styles.loaderCard}>
             <ActivityIndicator size="large" color="#8B5A00" />
             <Text style={styles.loaderText}>Loading your bookings</Text>
@@ -103,15 +95,7 @@ export default function BookingHistoryRoute() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={[styles.content, { paddingTop: Math.max(insets.top, 16) }]}>
-          <View style={styles.header}>
-            <Pressable style={styles.backButton} onPress={() => router.back()}>
-              <MaterialIcons name="arrow-back" size={22} color="#8B5A00" />
-            </Pressable>
-            <View>
-              <Text style={styles.kicker}>Yatra records</Text>
-              <Text style={styles.title}>Booking History</Text>
-            </View>
-          </View>
+          <Header onBack={() => router.back()} />
           <View style={styles.errorState}>
             <MaterialIcons name="error-outline" size={30} color="#8B5A00" />
             <Text style={styles.errorTitle}>We could not load your bookings</Text>
@@ -137,15 +121,7 @@ export default function BookingHistoryRoute() {
         }}
         ListHeaderComponent={
           <View>
-            <View style={styles.header}>
-              <Pressable style={styles.backButton} onPress={() => router.back()}>
-                <MaterialIcons name="arrow-back" size={22} color="#8B5A00" />
-              </Pressable>
-              <View>
-                <Text style={styles.kicker}>Yatra records</Text>
-                <Text style={styles.title}>Booking History</Text>
-              </View>
-            </View>
+            <Header onBack={() => router.back()} />
             {errorMessage ? (
               <View style={styles.inlineError}>
                 <Text style={styles.inlineErrorText}>{errorMessage}</Text>
@@ -169,26 +145,67 @@ export default function BookingHistoryRoute() {
   )
 }
 
+function Header({ onBack }: { onBack: () => void }) {
+  return (
+    <View style={styles.header}>
+      <Pressable style={styles.backButton} onPress={onBack}>
+        <MaterialIcons name="arrow-back" size={22} color="#8B5A00" />
+      </Pressable>
+      <View>
+        <Text style={styles.kicker}>Yatra records</Text>
+        <Text style={styles.title}>Booking History</Text>
+      </View>
+    </View>
+  )
+}
+
 function formatAmount(amount: number) {
   return `₹${amount.toLocaleString('en-IN')}`
 }
 
-function formatCreatedAt(createdAt?: string) {
-  if (!createdAt) {
-    return 'Created date unavailable'
+function formatDate(dateValue?: string | null) {
+  if (!dateValue) {
+    return ''
   }
 
-  const date = new Date(createdAt)
+  const date = new Date(dateValue)
 
   if (Number.isNaN(date.getTime())) {
-    return createdAt
+    return dateValue
   }
 
-  return `${date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · ${date.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function formatStatus(status: string) {
-  return status.replace(/_/g, ' ')
+function formatTravelDateRange(startDate?: string | null, endDate?: string | null) {
+  const start = formatDate(startDate)
+  const end = formatDate(endDate)
+
+  if (start && end) {
+    return `${start} - ${end}`
+  }
+
+  return start || end
+}
+
+function formatTravelerCount(count: number) {
+  return `${count} ${count === 1 ? 'Traveler' : 'Travelers'}`
+}
+
+function getBookingStatusTone(status: BookingStatus): { label: string; background: string; color: string } {
+  if (status === 'paid') {
+    return { label: 'Paid', background: '#EAF7EA', color: '#2E7D32' }
+  }
+
+  if (status === 'payment_pending') {
+    return { label: 'Payment Pending', background: '#FFF8ED', color: '#B97512' }
+  }
+
+  return { label: formatStatusLabel(status), background: '#F1F2F4', color: '#667085' }
+}
+
+function formatStatusLabel(status: string) {
+  return status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 const styles = StyleSheet.create({
@@ -225,14 +242,13 @@ const styles = StyleSheet.create({
   cardCopy: { flex: 1 },
   cardTitle: { color: '#2C1D10', fontSize: 16, fontWeight: '900' },
   cardMeta: { color: '#7E7162', fontSize: 13, marginTop: 4, fontWeight: '600' },
-  statusPill: { borderRadius: 999, backgroundColor: '#FFF0D9', paddingHorizontal: 10, paddingVertical: 7 },
-  statusText: { color: '#8B5A00', fontSize: 11, fontWeight: '900' },
+  statusPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
+  statusText: { fontSize: 11, fontWeight: '900' },
   divider: { height: 1, backgroundColor: 'rgba(139,90,0,0.08)', marginVertical: 14 },
-  cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16 },
-  packageBlock: { flex: 1, gap: 4 },
+  cardBody: { gap: 10 },
   cardLabel: { color: '#A08D77', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8 },
-  bookingId: { color: '#7E7162', fontSize: 13, fontWeight: '800' },
-  amount: { color: '#8B5A00', fontSize: 18, fontWeight: '900' },
+  reference: { color: '#7E7162', fontSize: 13, fontWeight: '800', marginTop: 3 },
+  tripMeta: { color: '#8B5A00', fontSize: 15, fontWeight: '900' },
   emptyState: {
     backgroundColor: '#FFF',
     borderRadius: 26,

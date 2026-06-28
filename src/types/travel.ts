@@ -7,12 +7,15 @@ export type TravelPackage = {
   description: string;
 };
 
-export type BookingStatus = 'payment_pending' | 'paid' | 'cancelled' | 'completed';
+export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'payment_pending' | 'paid';
 
 export type Booking = {
   id: string;
   bookingReference: string;
   packageId: string;
+  packageTitle?: string;
+  travelStartDate?: string | null;
+  travelEndDate?: string | null;
   userId: string;
   travelerCount: number;
   specialNotes: string | null;

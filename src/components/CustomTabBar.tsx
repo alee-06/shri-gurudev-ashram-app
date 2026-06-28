@@ -36,12 +36,12 @@ const SCREEN_W = Dimensions.get('window').width
 
 /* ─── Tab definitions ─── */
 const LEFT_TABS = [
-  { name: 'home', label: 'Home', icon: 'home-filled' as const },
-  { name: 'travel', label: 'Travel', icon: 'explore' as const },
+  { name: 'home', label: 'Home', icon: 'home-filled' as const, href: '/(tabs)/home' as const },
+  { name: 'travel', label: 'Travel', icon: 'explore' as const, href: '/(tabs)/travel' as const },
 ]
 const RIGHT_TABS = [
-  { name: 'notifications', label: 'Alerts', icon: 'notifications-none' as const },
-  { name: 'profile', label: 'Profile', icon: 'person-outline' as const },
+  { name: 'notifications', label: 'Alerts', icon: 'notifications-none' as const, href: '/(tabs)/notifications' as const },
+  { name: 'profile', label: 'Profile', icon: 'person-outline' as const, href: '/(tabs)/profile' as const },
 ]
 
 /* ─── Generate the notched SVG path ─── */
@@ -100,23 +100,26 @@ export default function CustomTabBar({ state, navigation }: CustomTabBarProps) {
   const bottomPadding = Math.max(insets.bottom, 8)
   const totalHeight = SVG_HEIGHT + bottomPadding
 
-  // Hide tab bar during booking / payment flows
-  if (
-    pathname.includes('/travel/booking') ||
-    pathname.includes('/travel/payment') ||
-    pathname.includes('/travel/success') ||
+  // Hide tab bar during travel and seva booking / payment / history flows
+  const shouldHideTabBar =
+    pathname === '/travel/booking' ||
+    pathname.startsWith('/travel/booking/') ||
+    pathname.startsWith('/travel/booking-status/') ||
+    pathname.startsWith('/travel/payment') ||
+    pathname.startsWith('/travel/success') ||
     pathname.includes('/seva-payment') ||
     pathname.includes('/seva-success') ||
     pathname.includes('/seva/annadan') ||
     pathname.includes('/seva/yajman') ||
     pathname.includes('/my-sevas')
-  ) {
+
+  if (shouldHideTabBar) {
     return null
   }
 
   const svgPath = getTabBarPath(SCREEN_W, SVG_HEIGHT)
 
-  const renderTab = (item: { name: string; label: string; icon: string }) => {
+  const renderTab = (item: { name: string; label: string; icon: string; href: string }) => {
     const routeIndex = state.routes.findIndex((r) => r.name === item.name)
     const focused = state.index === routeIndex
     const color = focused ? COLORS.active : COLORS.inactive
@@ -124,7 +127,7 @@ export default function CustomTabBar({ state, navigation }: CustomTabBarProps) {
     return (
       <Pressable
         key={item.name}
-        onPress={() => navigation.navigate(item.name)}
+        onPress={() => router.navigate(item.href as never)}
         style={styles.tabButton}
       >
         <MaterialIcons name={item.icon as any} size={ICON_SIZE} color={color} />
