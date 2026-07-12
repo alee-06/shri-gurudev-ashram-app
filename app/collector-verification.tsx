@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useAuthStore } from '../src/store/useAuthStore'
 
 const checklist = [
   { key: 'aadhaar', label: 'Aadhaar document uploaded', icon: 'badge' },
@@ -13,7 +14,21 @@ const checklist = [
 export default function CollectorVerificationRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const user = useAuthStore((s) => s.user)
+  const isHydrated = useAuthStore((s) => s.isHydrated)
   const [verified, setVerified] = useState<Record<string, boolean>>({ aadhaar: true })
+
+  useEffect(() => {
+    if (!isHydrated) return
+    if (!user || user.role !== 'collector') {
+      router.replace('/(tabs)/home' as never)
+    }
+  }, [isHydrated, user, router])
+
+  // Do not render content while auth is hydrating or role is invalid
+  if (!isHydrated || !user || user.role !== 'collector') {
+    return null
+  }
 
   return (
     <SafeAreaView style={styles.container}>

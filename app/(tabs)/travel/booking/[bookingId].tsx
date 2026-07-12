@@ -1,10 +1,11 @@
 import React from 'react'
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ActivityIndicator } from 'react-native'
 import { getBookingById } from '../../../../src/services'
+import TravelReceipt, { type TravelReceiptData } from '../../../../src/components/TravelReceipt'
 import { Booking } from '../../../../src/types/travel'
 
 export default function BookingDetailsRoute() {
@@ -15,6 +16,7 @@ export default function BookingDetailsRoute() {
   const [isLoading, setIsLoading] = React.useState(true)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const [errorMessage, setErrorMessage] = React.useState('')
+  const [showReceipt, setShowReceipt] = React.useState(false)
 
   const loadBooking = React.useCallback(async (refresh = false) => {
     if (refresh) {
@@ -65,6 +67,51 @@ export default function BookingDetailsRoute() {
     )
   }
 
+  const isPaid = booking?.status === 'paid' || booking?.status === 'confirmed' || booking?.status === 'completed'
+
+  const receiptData: TravelReceiptData | null = booking
+    ? {
+        bookingReference: booking.bookingReference,
+        bookingId: booking.id,
+        packageTitle: booking.packageTitle ?? booking.packageId,
+        travelStartDate: booking.travelStartDate,
+        travelEndDate: booking.travelEndDate,
+        travelerCount: booking.travelerCount,
+        totalAmount: booking.totalAmount,
+        status: booking.status,
+        fullName: booking.fullName,
+        phoneNumber: booking.phoneNumber,
+        createdAt: booking.createdAt,
+        transportType: booking.transportType,
+        roomType: booking.roomType,
+      }
+    : null
+
+  const shareReceipt = async () => {
+    if (!booking) return
+    const ref = booking.bookingReference
+    const amount = booking.totalAmount.toLocaleString('en-IN')
+    const departure = booking.travelStartDate
+      ? new Date(booking.travelStartDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
+      : '—'
+    try {
+      await Share.share({
+        title: `Yatra Booking Receipt — Shri Gurudev Ashram`,
+        message:
+          `🙏 Yatra Booking Confirmed!\n\n` +
+          `Package: ${booking.packageTitle ?? booking.packageId}\n` +
+          `Booking Ref: ${ref}\n` +
+          `Departure: ${departure}\n` +
+          `Travelers: ${booking.travelerCount}\n` +
+          `Amount: ₹${amount}\n\n` +
+          `Issued by Shri Gurudev Ashram\n` +
+          `Jai Shri Gurudev! 🙏`,
+      })
+    } catch {
+      // user cancelled — no-op
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -100,6 +147,18 @@ export default function BookingDetailsRoute() {
             <Text style={styles.primaryButtonText}>View Status</Text>
             <MaterialIcons name="arrow-forward" size={18} color="#fff" />
           </Pressable>
+          {isPaid && receiptData ? (
+            <View style={styles.receiptRow}>
+              <Pressable style={[styles.receiptButton, { flex: 1 }]} onPress={() => setShowReceipt(true)}>
+                <MaterialIcons name="receipt-long" size={18} color="#8B5A00" />
+                <Text style={styles.receiptButtonText}>View Receipt</Text>
+              </Pressable>
+              <Pressable style={[styles.receiptButton, { flex: 1 }]} onPress={() => void shareReceipt()}>
+                <MaterialIcons name="share" size={18} color="#8B5A00" />
+                <Text style={styles.receiptButtonText}>Share Receipt</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {booking.status === 'payment_pending' ? (
             <Pressable style={styles.secondaryButton} onPress={() => router.push(`/(tabs)/travel/payment?bookingId=${booking.id}&bookingReference=${booking.bookingReference}` as never)}>
               <Text style={styles.secondaryButtonText}>Pay Now</Text>
@@ -107,6 +166,29 @@ export default function BookingDetailsRoute() {
           ) : null}
         </View>
       </ScrollView>
+
+      {/* Receipt Modal */}
+      {receiptData ? (
+        <Modal
+          visible={showReceipt}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowReceipt(false)}
+        >
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowReceipt(false)}>
+            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Booking Receipt</Text>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <TravelReceipt data={receiptData} />
+              </ScrollView>
+              <Pressable style={styles.modalClose} onPress={() => setShowReceipt(false)}>
+                <Text style={styles.modalCloseText}>Close</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
     </SafeAreaView>
   )
 }
@@ -207,4 +289,35 @@ const styles = StyleSheet.create({
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 10 },
   emptyTitle: { color: '#2B231B', fontSize: 18, fontWeight: '900' },
   emptyText: { color: '#7E7162', fontSize: 13, fontWeight: '600', textAlign: 'center', lineHeight: 19 },
+
+  // Receipt buttons
+  receiptRow: { flexDirection: 'row', gap: 12 },
+  receiptButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    minHeight: 50, borderRadius: 999,
+    borderWidth: 1.5, borderColor: '#E8D5BE', backgroundColor: '#fff',
+  },
+  receiptButtonText: { color: '#8B5A00', fontSize: 14, fontWeight: '800' },
+
+  // Receipt modal
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(32,19,9,0.52)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FAF6F0', borderTopLeftRadius: 32, borderTopRightRadius: 32,
+    padding: 20, paddingBottom: 36, gap: 16, maxHeight: '90%',
+    shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 24, shadowOffset: { width: 0, height: -8 },
+    elevation: 16,
+  },
+  modalHandle: {
+    width: 44, height: 4, borderRadius: 2, backgroundColor: '#E8D5BE',
+    alignSelf: 'center', marginBottom: 4,
+  },
+  modalTitle: { color: '#2B231B', fontSize: 18, fontWeight: '900', textAlign: 'center' },
+  modalClose: {
+    minHeight: 50, borderRadius: 999, backgroundColor: '#E65C00',
+    alignItems: 'center', justifyContent: 'center', marginTop: 4,
+  },
+  modalCloseText: { color: '#fff', fontSize: 15, fontWeight: '900' },
 })

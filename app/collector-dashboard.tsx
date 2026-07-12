@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { BlurView } from 'expo-blur'
 import { LinearGradient } from 'expo-linear-gradient'
 import { MaterialIcons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { collectorTasks } from '../src/services/mockData'
 import CollectorIDCard from '../src/components/CollectorIDCard'
@@ -16,9 +17,23 @@ const stats = [
 ]
 
 export default function CollectorDashboardRoute() {
+  const router = useRouter()
   const insets = useSafeAreaInsets()
   const user = useAuthStore((s) => s.user)
+  const isHydrated = useAuthStore((s) => s.isHydrated)
   const [showIDCard, setShowIDCard] = useState(false)
+
+  useEffect(() => {
+    if (!isHydrated) return
+    if (!user || user.role !== 'collector') {
+      router.replace('/(tabs)/home' as never)
+    }
+  }, [isHydrated, user, router])
+
+  // Do not render content while auth is hydrating or role is invalid
+  if (!isHydrated || !user || user.role !== 'collector') {
+    return null
+  }
 
   return (
     <SafeAreaView style={styles.container}>

@@ -18,6 +18,7 @@ import Reanimated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTimi
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { SEVA_LABELS } from '../../src/constants/seva'
 import { fetchUpcomingSevas } from '../../src/services/seva'
+import { useAuthStore } from '../../src/store/useAuthStore'
 import type { UpcomingSeva } from '../../src/types/seva'
 
 const COLORS = {
@@ -298,6 +299,8 @@ function InfoAccordionCard({
 export default function HomeRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const user = useAuthStore((s) => s.user)
+  const isCollector = user?.role === 'collector'
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const drawerAnim = useRef(new Animated.Value(0)).current
@@ -394,7 +397,9 @@ export default function HomeRoute() {
           <Text style={styles.sectionTitle}>Essential Services</Text>
 
           <View style={styles.grid}>
-            {ASHRAM_SERVICES_CONFIG.filter((s) => s.enabled).map((item) => (
+            {ASHRAM_SERVICES_CONFIG
+              .filter((s) => s.enabled && (s.id !== 'collector' || isCollector))
+              .map((item) => (
               <TouchableOpacity
                 key={item.id}
                 style={styles.card}
@@ -441,14 +446,11 @@ export default function HomeRoute() {
           </View>
 
           {[
-            ['About', '/help-support'],
-            ['Gurudev', '/(tabs)/home'],
-            ['Activities', '/(tabs)/travel'],
-            ['Events', '/(tabs)/notifications'],
-            ['Gallery', '/(tabs)/home'],
-            ['Shop (Coming Soon)', '/(tabs)/home'],
-            ['Testimonials', '/(tabs)/profile'],
-            ['Contact', '/help-support'],
+            ['About Ashram', '/help-support'],
+            ['Activities & Yatra', '/(tabs)/travel'],
+            ['Announcements', '/(tabs)/notifications'],
+            ['Donate', '/donation'],
+            ['Contact Us', '/help-support'],
           ].map(([label, href]) => (
             <TouchableOpacity
               key={label}
