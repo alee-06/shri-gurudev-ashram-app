@@ -3,8 +3,8 @@ import { Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, 
 import { MaterialIcons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ActivityIndicator } from 'react-native'
-import { getBookingById } from '../../../../src/services'
+import { ActivityIndicator, Alert } from 'react-native'
+import { cancelBooking, getBookingById } from '../../../../src/services'
 import TravelReceipt, { type TravelReceiptData } from '../../../../src/components/TravelReceipt'
 import { Booking } from '../../../../src/types/travel'
 
@@ -17,6 +17,34 @@ export default function BookingDetailsRoute() {
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const [errorMessage, setErrorMessage] = React.useState('')
   const [showReceipt, setShowReceipt] = React.useState(false)
+  const [isCancelling, setIsCancelling] = React.useState(false)
+
+  const handleCancel = () => {
+    if (!booking) return
+    Alert.alert(
+      'Cancel Booking',
+      'Are you sure you want to cancel this booking? This action cannot be undone.',
+      [
+        { text: 'Keep Booking', style: 'cancel' },
+        {
+          text: 'Cancel Booking',
+          style: 'destructive',
+          onPress: async () => {
+            setIsCancelling(true)
+            try {
+              const updated = await cancelBooking(booking.id)
+              setBooking(updated)
+              Alert.alert('Booking Cancelled', 'Your booking has been cancelled successfully.')
+            } catch (err) {
+              Alert.alert('Cancellation Failed', err instanceof Error ? err.message : 'Please try again.')
+            } finally {
+              setIsCancelling(false)
+            }
+          }
+        }
+      ]
+    )
+  }
 
   const loadBooking = React.useCallback(async (refresh = false) => {
     if (refresh) {
@@ -164,6 +192,11 @@ export default function BookingDetailsRoute() {
               <Text style={styles.secondaryButtonText}>Pay Now</Text>
             </Pressable>
           ) : null}
+          {booking.status === 'payment_pending' || booking.status === 'confirmed' ? (
+            <Pressable style={styles.cancelButton} onPress={handleCancel} disabled={isCancelling}>
+              {isCancelling ? <ActivityIndicator size="small" color="#D32F2F" /> : <Text style={styles.cancelButtonText}>Cancel Booking</Text>}
+            </Pressable>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -289,6 +322,16 @@ const styles = StyleSheet.create({
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 10 },
   emptyTitle: { color: '#2B231B', fontSize: 18, fontWeight: '900' },
   emptyText: { color: '#7E7162', fontSize: 13, fontWeight: '600', textAlign: 'center', lineHeight: 19 },
+  cancelButton: {
+    minHeight: 54,
+    borderRadius: 999,
+    backgroundColor: '#FFEBEE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+  },
+  cancelButtonText: { color: '#C62828', fontSize: 15, fontWeight: '900' },
 
   // Receipt buttons
   receiptRow: { flexDirection: 'row', gap: 12 },

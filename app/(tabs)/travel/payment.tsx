@@ -140,7 +140,30 @@ export default function PaymentRoute() {
             <MaterialIcons name="payments" size={34} color="#E65C00" />
           </View>
           <Text style={styles.reference}>{booking?.bookingReference ?? bookingReference ?? bookingId}</Text>
-          <Text style={styles.amount}>INR {(booking?.totalAmount ?? 0).toLocaleString('en-IN')}</Text>
+          
+          {(() => {
+            const baseAmount = booking?.totalAmount ?? 0;
+            const convenienceFee = Math.round(baseAmount * 0.02);
+            const totalPayable = baseAmount + convenienceFee;
+            return (
+              <View style={styles.breakdown}>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>Base Amount</Text>
+                  <Text style={styles.breakdownValue}>₹{baseAmount.toLocaleString('en-IN')}</Text>
+                </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>Convenience Fee (2%)</Text>
+                  <Text style={styles.breakdownValue}>₹{convenienceFee.toLocaleString('en-IN')}</Text>
+                </View>
+                <View style={styles.breakdownDivider} />
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownTotalLabel}>Total Payable</Text>
+                  <Text style={styles.breakdownTotalValue}>₹{totalPayable.toLocaleString('en-IN')}</Text>
+                </View>
+              </View>
+            );
+          })()}
+
           <Text style={styles.description}>
             Your payment will be verified by the backend. Seats are reserved only after successful payment.
           </Text>
@@ -198,4 +221,11 @@ const styles = StyleSheet.create({
   errorText: { color: '#D32F2F', fontSize: 13, fontWeight: '800', lineHeight: 20 },
   primaryButton: { minHeight: 58, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  breakdown: { width: '100%', gap: 12, marginTop: 8, marginBottom: 8, backgroundColor: '#FAF6F0', padding: 16, borderRadius: 20 },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  breakdownLabel: { color: '#7E7162', fontSize: 14, fontWeight: '600' },
+  breakdownValue: { color: '#2B231B', fontSize: 14, fontWeight: '800' },
+  breakdownDivider: { height: 1, backgroundColor: '#E8D5BE', marginVertical: 4 },
+  breakdownTotalLabel: { color: '#2B231B', fontSize: 16, fontWeight: '900' },
+  breakdownTotalValue: { color: '#E65C00', fontSize: 18, fontWeight: '900' },
 })

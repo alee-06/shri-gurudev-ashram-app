@@ -1,9 +1,11 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+/backend/private_storage/
 google-services.json
 /backend/uploads
 .env
 .env.*
 .temp
+firebase-service-account.json
 # dependencies
 node_modules/
 

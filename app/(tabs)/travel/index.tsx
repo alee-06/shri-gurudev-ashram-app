@@ -62,19 +62,20 @@ function PremiumTravelCard({
     <Animated.View
       entering={FadeInDown.delay(80 * index).duration(650)}
       layout={LinearTransition.springify()}
-      style={[styles.cardWrap, cardStyle]}
+      style={styles.cardWrap}
     >
-      <Pressable
-        onPress={onPress}
-        onPressIn={() => {
-          pressScale.value = withTiming(0.985, { duration: 120 })
-        }}
-        onPressOut={() => {
-          pressScale.value = withTiming(1, { duration: 180 })
-        }}
-        style={styles.cardPressable}
-      >
-        <View style={styles.cardShell}>
+      <Animated.View style={cardStyle}>
+        <Pressable
+          onPress={onPress}
+          onPressIn={() => {
+            pressScale.value = withTiming(0.985, { duration: 120 })
+          }}
+          onPressOut={() => {
+            pressScale.value = withTiming(1, { duration: 180 })
+          }}
+          style={styles.cardPressable}
+        >
+          <View style={styles.cardShell}>
           <Animated.View style={[styles.cardImageWrap, imageStyle]}>
             <Image source={{ uri: CARD_IMAGES[index % CARD_IMAGES.length] }} style={styles.cardImage} contentFit="cover" transition={240} />
 
@@ -146,8 +147,9 @@ function PremiumTravelCard({
               </View>
             </View>
           </View>
-        </View>
-      </Pressable>
+          </View>
+        </Pressable>
+      </Animated.View>
     </Animated.View>
   )
 }

@@ -1,5 +1,6 @@
-import { getSupabaseClient } from '../lib/supabase'
+import { getAuthToken } from './auth'
 import type { Database } from '../types/database.types'
+import api from '../api/axiosClient'
 
 export type ProfileInfo = {
   id: string
@@ -29,6 +30,18 @@ type BookingStatsRow = Pick<BookingRow, 'id' | 'status' | 'total_amount'> & {
 }
 
 const PROFILE_IMAGE_BUCKET = 'profile-images'
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://10.0.2.2:3000'
+
+async function requestCurrentProfile(path: string, init: RequestInit = {}) {
+  const token = await getAuthToken()
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init.headers ?? {}) },
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body.error ?? 'Could not load your profile.')
+  return body
+}
 
 function mapProfile(row: UserRow): ProfileInfo {
   return {
@@ -65,58 +78,20 @@ function isCompletedBooking(booking: BookingStatsRow, today: string) {
 }
 
 export async function getCurrentProfileInfo(): Promise<ProfileInfo> {
-  const supabase = getSupabaseClient()
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-
-  if (sessionError || !sessionData.session?.user) {
-    throw new Error('Please sign in to view your profile.')
-  }
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', sessionData.session.user.id)
-    .maybeSingle()
-
-  if (error) {
-    throw error
-  }
-
-  if (!data) {
-    throw new Error('Profile record not found.')
-  }
-
-  if (data.deleted_at) {
-    throw new Error('This account has been deactivated.')
-  }
-
-  return mapProfile(data)
+  const { user } = await requestCurrentProfile('/api/users/me')
+  return mapProfile(user)
 }
 
 export async function getCurrentUserYatraStats(): Promise<YatraStats> {
-  const supabase = getSupabaseClient()
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-
-  if (sessionError || !sessionData.session?.user) {
-    throw new Error('Please sign in to view your yatra summary.')
-  }
-
-  const { data, error } = await supabase
-    .from('bookings')
-    .select('id, status, total_amount, travel_packages(start_date, end_date)')
-    .eq('user_id', sessionData.session.user.id)
-
-  if (error) {
-    throw error
-  }
-
-  const bookings = (data ?? []) as BookingStatsRow[]
+  const { data } = await api.get<{ bookings: BookingStatsRow[] }>('/api/bookings')
+  const bookings = data.bookings ?? []
+  
   const today = getTodayDateString()
 
   return {
     totalBookings: bookings.length,
-    upcomingYatras: bookings.filter((booking) => isUpcomingBooking(booking, today)).length,
-    completedYatras: bookings.filter((booking) => isCompletedBooking(booking, today)).length,
+    upcomingYatras: bookings.filter((booking) => isUpcomingBooking(booking as any, today)).length,
+    completedYatras: bookings.filter((booking) => isCompletedBooking(booking as any, today)).length,
     pendingPayments: bookings.filter((booking) => booking.status === 'payment_pending').length,
   }
 }
@@ -125,78 +100,33 @@ export async function updateCurrentProfile(input: {
   fullName: string
   profileImageUrl: string | null
 }): Promise<ProfileInfo> {
-  const supabase = getSupabaseClient()
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-
-  if (sessionError || !sessionData.session?.user) {
-    throw new Error('Please sign in to update your profile.')
-  }
-
-  const update: UserUpdate = {
-    full_name: input.fullName.trim(),
-    profile_image_url: input.profileImageUrl,
-    updated_at: new Date().toISOString(),
-  }
-
-  const { data, error } = await supabase
-    .from('users')
-    .update(update)
-    .eq('id', sessionData.session.user.id)
-    .select('*')
-    .single()
-
-  if (error) {
-    throw error
-  }
-
-  return mapProfile(data)
+  const { user } = await requestCurrentProfile('/api/users/me', { method: 'PUT', body: JSON.stringify({ fullName: input.fullName.trim(), profileImageUrl: input.profileImageUrl }) })
+  return mapProfile(user)
 }
 
 export async function uploadProfileImage(imageUri: string): Promise<string> {
-  const supabase = getSupabaseClient()
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+  const formData = new FormData()
+  
+  // We need to fetch the file to get its type if we don't have it, but FormData in React Native
+  // can just take an object with uri, type, and name.
+  formData.append('profileImage', {
+    uri: imageUri,
+    type: 'image/jpeg', // Default, multer will check extensions if needed
+    name: `profile-${Date.now()}.jpg`,
+  } as any)
 
-  if (sessionError || !sessionData.session?.user) {
-    throw new Error('Please sign in to upload a profile image.')
-  }
-
-  const response = await fetch(imageUri)
-  const blob = await response.blob()
-  const imageData = await blob.arrayBuffer()
-
-  const contentType = blob.type || 'image/jpeg'
-  const extension = contentType.split('/')[1] || 'jpg'
-  const path = `${sessionData.session.user.id}/${Date.now()}.${extension}`
-
-  const { error } = await supabase.storage
-    .from(PROFILE_IMAGE_BUCKET)
-    .upload(path, imageData, {
-      contentType,
-      upsert: true,
+  try {
+    const { data } = await api.post<{ publicUrl: string }>('/api/users/upload-profile-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     })
-
-  if (error) {
-    throw new Error(error.message)
+    return data.publicUrl
+  } catch (error) {
+    throw new Error('Could not upload profile image. Please try again.')
   }
-
-  const { data } = supabase.storage.from(PROFILE_IMAGE_BUCKET).getPublicUrl(path)
-  return data.publicUrl
 }
 
 export async function softDeleteCurrentUser(): Promise<void> {
-  const supabase = getSupabaseClient()
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-
-  if (sessionError || !sessionData.session?.user) {
-    throw new Error('Please sign in to delete your account.')
-  }
-
-  const { error } = await supabase
-    .from('users')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', sessionData.session.user.id)
-
-  if (error) {
-    throw error
-  }
+  await api.delete('/api/users/me')
 }

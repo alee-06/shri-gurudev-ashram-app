@@ -7,6 +7,7 @@ import type { AuthUser } from '../services/auth'
 // ─── Props ────────────────────────────────────────────────────────────────────
 type CollectorIDCardProps = {
   user: AuthUser
+  collectorId?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -56,9 +57,9 @@ function QRPlaceholder({ id }: { id: string }) {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function CollectorIDCard({ user }: CollectorIDCardProps) {
+export default function CollectorIDCard({ user, collectorId: registeredCollectorId }: CollectorIDCardProps) {
   const initials = getInitials(user.fullName)
-  const collectorId = formatCollectorId(user.id)
+  const collectorId = registeredCollectorId ? `SGA-${registeredCollectorId.slice(-8).toUpperCase()}` : formatCollectorId(user.id)
   const isVerified = user.verificationStatus === 'verified'
   const issueDateStr = user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 

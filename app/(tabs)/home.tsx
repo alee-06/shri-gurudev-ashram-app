@@ -44,7 +44,7 @@ const ASHRAM_SERVICES_CONFIG: HomeServiceConfig[] = [
   { id: 'yajman', title: 'Guruji Aarti Seva', icon: 'local-fire-department', route: '/(tabs)/seva/yajman', enabled: true },
   { id: 'donations', title: 'Donations', icon: 'volunteer-activism', route: '/donation', enabled: true },
   { id: 'activity', title: 'My Activity', icon: 'history', route: '/(tabs)/my-sevas', enabled: true },
-  { id: 'collector', title: 'Verify Collector', icon: 'verified-user', route: '/collector-dashboard', enabled: true },
+  { id: 'collector', title: 'Collector Registration', icon: 'verified-user', route: '/collector-apply', enabled: true },
   { id: 'announcements', title: 'Announcements', icon: 'campaign', route: '/(tabs)/notifications', enabled: true },
 ]
 
@@ -300,7 +300,7 @@ export default function HomeRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const user = useAuthStore((s) => s.user)
-  const isCollector = user?.role === 'collector'
+  const isCollector = Boolean(user)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const drawerAnim = useRef(new Animated.Value(0)).current

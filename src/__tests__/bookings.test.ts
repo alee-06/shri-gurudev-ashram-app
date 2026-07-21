@@ -41,11 +41,18 @@ const mockGet = api.get as jest.Mock
 const validInput: CreateBookingInput = {
   packageId: 'pkg-haridwar-2024',
   travelerCount: 2,
-  fullName: 'Ramesh Kumar',
-  phoneNumber: '9876543210',
-  whatsappNumber: '9876543210',
-  dob: '1985-06-15',
-  address: 'Pune, Maharashtra',
+  passengers: [
+    {
+      fullName: 'Ramesh Kumar',
+      dob: '1985-06-15',
+      gender: 'male',
+      phone: '9876543210',
+      address: 'Pune, Maharashtra',
+      aadhaarNumber: '123412341234',
+      aadhaarImagePath: 'path/to/doc.jpg',
+      selfieImagePath: 'path/to/doc.jpg',
+    }
+  ],
   transportType: 'Bus',
   busType: 'AC',
   roomType: 'Double',

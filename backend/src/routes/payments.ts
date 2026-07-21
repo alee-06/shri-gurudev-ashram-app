@@ -48,7 +48,12 @@ paymentsRouter.post('/create-order', requireAuth, async (request, response, next
       throw new HttpError(400, 'Not enough seats available')
     }
 
-    const amount = calculateAmount(travelPackage.price, booking.traveler_count)
+    const baseAmount = Number(booking.total_amount)
+    if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+      throw new HttpError(400, 'Invalid booking amount')
+    }
+    const convenienceFee = Math.round(baseAmount * 0.02) // 2% convenience fee
+    const amount = baseAmount + convenienceFee
     const amountInPaise = Math.round(amount * 100)
 
     const { data: existingPayment, error: existingError } = await supabaseAdmin
@@ -66,6 +71,8 @@ paymentsRouter.post('/create-order', requireAuth, async (request, response, next
     }
 
     if (existingPayment?.status === 'created' && existingPayment.razorpay_order_id) {
+      // If amount has changed due to some reason (e.g., fee change), we technically should recreate the order, 
+      // but assuming fixed 2% fee, it matches.
       response.json({
         order: {
           id: existingPayment.razorpay_order_id,
@@ -92,6 +99,7 @@ paymentsRouter.post('/create-order', requireAuth, async (request, response, next
       payment_method: 'razorpay',
       razorpay_order_id: order.id,
       status: 'created',
+      gateway_fee: convenienceFee,
     }
 
     const paymentQuery = existingPayment
@@ -179,7 +187,7 @@ paymentsRouter.post('/verify', requireAuth, async (request, response, next) => {
     }
 
     const travelPackage = await loadPackage(booking.package_id)
-    const amount = calculateAmount(travelPackage.price, booking.traveler_count)
+    const amount = Number(booking.total_amount)
 
     if (travelPackage.remaining_seats < booking.traveler_count) {
       throw new HttpError(400, 'Not enough seats available')
@@ -192,6 +200,120 @@ paymentsRouter.post('/verify', requireAuth, async (request, response, next) => {
       razorpaySignature: razorpay_signature,
       paymentMethod: 'razorpay',
     })
+
+    response.json({ success: true })
+  } catch (error) {
+    next(error)
+  }
+})
+
+paymentsRouter.post('/create-seva-order', requireAuth, async (request, response, next) => {
+  try {
+    const { bookingId } = request.body as CreateOrderBody
+
+    if (!bookingId || typeof bookingId !== 'string' || !bookingId.trim()) {
+      throw new HttpError(400, 'bookingId is required')
+    }
+
+    const { data: booking, error } = await supabaseAdmin
+      .from('seva_bookings')
+      .select('*')
+      .eq('id', bookingId)
+      .single()
+
+    if (error || !booking) {
+      throw new HttpError(404, 'Seva booking not found')
+    }
+
+    assertBookingOwner(booking.user_id, (request as AuthenticatedRequest).userId)
+
+    if (booking.status !== 'payment_pending') {
+      throw new HttpError(400, 'Booking is not pending payment')
+    }
+
+    const amountInPaise = Math.round(Number(booking.total_amount) * 100)
+
+    if (booking.razorpay_order_id) {
+      response.json({
+        order: {
+          id: booking.razorpay_order_id,
+          amount: amountInPaise,
+          currency: 'INR',
+        },
+        booking,
+      })
+      return
+    }
+
+    const order = await razorpay.orders.create({
+      amount: amountInPaise,
+      currency: 'INR',
+      receipt: booking.booking_reference,
+      notes: {
+        sevaBookingId: bookingId,
+      },
+    })
+
+    const { error: updateError } = await supabaseAdmin
+      .from('seva_bookings')
+      .update({ razorpay_order_id: order.id })
+      .eq('id', bookingId)
+
+    if (updateError) {
+      throw new HttpError(500, updateError.message)
+    }
+
+    response.json({ order, booking })
+  } catch (error) {
+    next(error)
+  }
+})
+
+paymentsRouter.post('/verify-seva', requireAuth, async (request, response, next) => {
+  try {
+    const { bookingId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = request.body as VerifyPaymentBody
+
+    if (!bookingId || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      throw new HttpError(400, 'Missing required payment verification fields')
+    }
+
+    if (!isValidPaymentSignature(razorpay_order_id, razorpay_payment_id, razorpay_signature)) {
+      throw new HttpError(400, 'Invalid Razorpay signature')
+    }
+
+    const { data: booking, error } = await supabaseAdmin
+      .from('seva_bookings')
+      .select('*')
+      .eq('id', bookingId)
+      .single()
+
+    if (error || !booking) {
+      throw new HttpError(404, 'Seva booking not found')
+    }
+
+    assertBookingOwner(booking.user_id, (request as AuthenticatedRequest).userId)
+
+    if (booking.razorpay_order_id !== razorpay_order_id) {
+      throw new HttpError(400, 'Razorpay order does not match this seva booking')
+    }
+
+    if (booking.status === 'paid') {
+      response.json({ success: true, message: 'Already verified' })
+      return
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from('seva_bookings')
+      .update({
+        status: 'paid',
+        razorpay_payment_id,
+        razorpay_signature,
+      })
+      .eq('id', bookingId)
+
+    if (updateError) {
+      throw new HttpError(500, updateError.message)
+    }
 
     response.json({ success: true })
   } catch (error) {
@@ -236,15 +358,6 @@ async function loadPackage(packageId: string) {
   return travelPackage
 }
 
-function calculateAmount(packagePrice: number, travelerCount: number) {
-  const amount = Number(packagePrice) * travelerCount
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new HttpError(400, 'Invalid payable amount')
-  }
-
-  return amount
-}
 
 function assertBookingOwner(bookingUserId: string, requestUserId: string) {
   if (bookingUserId !== requestUserId) {

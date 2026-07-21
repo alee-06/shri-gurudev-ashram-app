@@ -11,7 +11,11 @@ export function isValidAadhaarNumber(value: string) {
 }
 
 export function normalizeDigits(value: string, maxLength: number) {
-  return value.replace(/[^\d]/g, "").slice(0, maxLength);
+  let cleaned = value.replace(/[^\d]/g, "");
+  if (maxLength === 10 && cleaned.length > 10 && cleaned.startsWith('91')) {
+    cleaned = cleaned.slice(2);
+  }
+  return cleaned.slice(0, maxLength);
 }
 
 export function isNonEmptyString(value: string) {

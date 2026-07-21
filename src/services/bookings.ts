@@ -104,25 +104,10 @@ export async function createBooking(
 
 export async function getBookingsByUser(_userId?: string): Promise<Booking[]> {
   try {
-    const supabase = getSupabaseClient();
-    const { data: sessionData, error: sessionError } =
-      await supabase.auth.getSession();
 
-    if (sessionError || !sessionData.session?.user) {
-      throw new Error("Please sign in to view your bookings.");
-    }
+    const { data } = await api.get<{ bookings: BookingHistoryRow[] }>("/api/bookings");
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .select("*, travel_packages(title, start_date, end_date)")
-      .eq("user_id", sessionData.session.user.id)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      throw error;
-    }
-
-    const bookings = (data ?? []) as unknown as BookingHistoryRow[];
+    const bookings = data.bookings ?? [];
 
     return bookings.map((booking) =>
       mapBookingRow(booking, {
@@ -152,6 +137,22 @@ export async function getBookingById(bookingId: string): Promise<Booking> {
       getFriendlyApiError(
         error,
         "Could not load booking details. Please try again.",
+      ),
+    );
+  }
+}
+
+export async function cancelBooking(bookingId: string): Promise<Booking> {
+  try {
+    const { data } = await api.post<{ booking: BookingApiRow }>(
+      `/api/bookings/${bookingId}/cancel`,
+    );
+    return mapBookingRow(data.booking);
+  } catch (error) {
+    throw new Error(
+      getFriendlyApiError(
+        error,
+        "Could not cancel booking. Please try again.",
       ),
     );
   }

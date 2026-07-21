@@ -6,6 +6,58 @@ import { supabaseAdmin } from "../services/supabaseAdmin";
 
 export const usersRouter = Router();
 
+usersRouter.get("/me", requireAuth, async (request, response, next) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("users")
+      .select("*")
+      .eq("id", (request as AuthenticatedRequest).userId)
+      .single();
+    if (error || !data) throw new HttpError(404, "User profile not found");
+    response.json({ user: data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.put("/me", requireAuth, async (request, response, next) => {
+  try {
+    const body = request.body ?? {};
+    const updates: Record<string, unknown> = {};
+    if (typeof body.fullName === "string")
+      updates.full_name = body.fullName.trim();
+    if (typeof body.profileImageUrl === "string")
+      updates.profile_image_url = body.profileImageUrl;
+    if (typeof body.pushToken === "string")
+      updates.push_token = body.pushToken;
+    const { data, error } = await supabaseAdmin
+      .from("users")
+      .update(updates)
+      .eq("id", (request as AuthenticatedRequest).userId)
+      .select("*")
+      .single();
+    if (error || !data)
+      throw new HttpError(400, error?.message ?? "Could not update profile");
+    response.json({ user: data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.delete("/me", requireAuth, async (request, response, next) => {
+  try {
+    const { error } = await supabaseAdmin
+      .from("users")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", (request as AuthenticatedRequest).userId);
+
+    if (error) throw new HttpError(400, error.message);
+    response.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
 type SubmitVerificationBody = {
   aadhaarNumber?: string;
   aadhaarImagePath?: string | null;
@@ -60,6 +112,49 @@ usersRouter.post(
       next(error);
     }
   },
+);
+
+usersRouter.post(
+  "/upload-profile-image",
+  requireAuth,
+  upload.single("profileImage"),
+  async (request, response, next) => {
+    try {
+      const authRequest = request as AuthenticatedRequest & {
+        file?: Express.Multer.File;
+      };
+
+      if (!authRequest.file) {
+        throw new HttpError(400, "No image file provided");
+      }
+
+      const fs = require('fs');
+      const fileBuffer = fs.readFileSync(authRequest.file.path);
+      const ext = authRequest.file.originalname.split('.').pop() || 'jpg';
+      const path = `${authRequest.userId}/${Date.now()}.${ext}`;
+
+      const { error } = await supabaseAdmin.storage
+        .from('profile-images')
+        .upload(path, fileBuffer, {
+          contentType: authRequest.file.mimetype,
+          upsert: true,
+        });
+
+      if (error) {
+        throw new HttpError(500, error.message);
+      }
+
+      fs.unlinkSync(authRequest.file.path);
+
+      const { data } = supabaseAdmin.storage
+        .from('profile-images')
+        .getPublicUrl(path);
+
+      response.status(200).json({ publicUrl: data.publicUrl });
+    } catch (error) {
+      next(error);
+    }
+  }
 );
 
 usersRouter.post(
