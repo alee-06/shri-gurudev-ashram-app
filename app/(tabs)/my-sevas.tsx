@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -14,12 +15,14 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useSevaStore } from '../../src/store/useSevaStore'
-import SevaReceipt from '../../src/components/SevaReceipt'
 import { SEVA_LABELS } from '../../src/constants/seva'
+import SevaReceipt from '../../src/components/SevaReceipt'
 import type { SevaBooking } from '../../src/types/seva'
+import { fetchSevaHistory } from '../../src/services/seva'
 import { getBookingsByUser } from '../../src/services/bookings'
 import type { Booking } from '../../src/types/travel'
+import { useAuthStore } from '../../src/store/useAuthStore'
+import { useProtectedRoute } from '../../src/hooks/useProtectedRoute'
 
 // ─── Categories & Tabs ────────────────────────────────────────────────────────
 type CategoryKey = 'all' | 'annadan' | 'yajman' | 'travel'
@@ -124,16 +127,28 @@ function ActivityCard({ item, onPress }: { item: ActivityItem; onPress: (item: A
 export default function MySevasRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
-  const sevaHistory = useSevaStore((s) => s.sevaHistory)
+  const user = useAuthStore((s) => s.user)
+  const isHydrated = useAuthStore((s) => s.isHydrated)
 
+  const [sevaHistory, setSevaHistory] = useState<SevaBooking[]>([])
   const [travelBookings, setTravelBookings] = useState<Booking[]>([])
   const [activeCategory, setActiveCategory] = useState<CategoryKey>('all')
   const [activeTab, setActiveTab] = useState<TabKey>('upcoming')
   const [selectedBooking, setSelectedBooking] = useState<SevaBooking | null>(null)
+  const [isLoadingData, setIsLoadingData] = useState(true)
+  useProtectedRoute()
 
   useEffect(() => {
-    getBookingsByUser().then(setTravelBookings).catch(() => {})
+    Promise.all([getBookingsByUser(), fetchSevaHistory()])
+      .then(([tb, sh]) => {
+        setTravelBookings(tb)
+        setSevaHistory(sh)
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingData(false))
   }, [])
+
+  if (!isHydrated || !user) return null
 
   // Build unified items
   const allItems: ActivityItem[] = [
@@ -257,6 +272,14 @@ export default function MySevasRoute() {
           ))}
         </View>
 
+        {/* Loading indicator for travel bookings */}
+        {isLoadingData && activeCategory !== 'annadan' && activeCategory !== 'yajman' ? (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color="#8B5A00" />
+            <Text style={styles.loadingText}>Loading travel bookings…</Text>
+          </View>
+        ) : null}
+
         {/* Content */}
         {filtered.length === 0 ? (
           <Animated.View entering={FadeInDown.duration(400)} style={styles.emptyState}>
@@ -376,6 +399,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#8B5A00', alignItems: 'center', justifyContent: 'center',
   },
   countBadgeText: { color: '#fff', fontSize: 14, fontWeight: '900' },
+
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
+  loadingText: { color: '#8B5A00', fontSize: 13, fontWeight: '600' },
 
   // Category strip
   catStrip: { gap: 8, paddingBottom: 2 },

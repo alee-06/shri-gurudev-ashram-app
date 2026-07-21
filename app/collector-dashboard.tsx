@@ -5,41 +5,39 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { collectorTasks } from '../src/services/mockData'
 import CollectorIDCard from '../src/components/CollectorIDCard'
 import { useAuthStore } from '../src/store/useAuthStore'
-
-const stats = [
-  { label: 'Assigned yatris', value: '128', icon: 'groups' },
-  { label: 'Payment pending', value: '42', icon: 'hourglass-empty' },
-  { label: 'Paid bookings', value: '86', icon: 'check-circle' },
-  { label: 'Upcoming yatras', value: '18', icon: 'event-note' },
-]
+import { getCollectorDashboard, getCollectorStatus, getLeaderboard } from '../src/services/donation'
+import { useProtectedRoute } from '../src/hooks/useProtectedRoute'
 
 export default function CollectorDashboardRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const user = useAuthStore((s) => s.user)
   const isHydrated = useAuthStore((s) => s.isHydrated)
+  useProtectedRoute()
+
   const [showIDCard, setShowIDCard] = useState(false)
+  const [dashboard, setDashboard] = useState<any>({ recentDonations: [] })
+  const [leaderboard, setLeaderboard] = useState<any[]>([])
+  const [collectorData, setCollectorData] = useState<any>(null)
+  const [statusLoading, setStatusLoading] = useState(true)
 
   useEffect(() => {
     if (!isHydrated) return
-    if (!user || user.role !== 'collector') {
-      router.replace('/(tabs)/home' as never)
-    }
+    if (user) void getCollectorStatus().then((status) => { setCollectorData(status.data); if (status.data?.role !== 'COLLECTOR_APPROVED') { router.replace('/collector-apply' as never); return null } return Promise.all([getCollectorDashboard(), getLeaderboard()]) }).then((result) => { if (!result) return; const [d, l] = result; setDashboard(d.data ?? {}); setLeaderboard(l.leaderboard ?? []) }).catch(() => Alert.alert('Collector portal unavailable', 'Please sign in and try again.')).finally(() => setStatusLoading(false))
   }, [isHydrated, user, router])
 
   // Do not render content while auth is hydrating or role is invalid
-  if (!isHydrated || !user || user.role !== 'collector') {
+  if (!isHydrated || !user || statusLoading) {
     return null
   }
 
   return (
     <SafeAreaView style={styles.container}>
       <FlatList
-        data={collectorTasks}
-        keyExtractor={(item) => item.id}
+        data={dashboard.recentDonations ?? []}
+        keyExtractor={(item, index) => String(item.id ?? item.date ?? index)}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View style={[styles.headerBlock, { paddingTop: Math.max(insets.top, 12) + 6 }]}>
@@ -56,7 +54,7 @@ export default function CollectorDashboardRoute() {
               </View>
 
               <View style={styles.quickStatsGrid}>
-                {stats.map((stat) => (
+                {[{ label: 'Collected amount', value: `₹${dashboard.totalAmount ?? 0}`, icon: 'payments' }, { label: 'Successful donations', value: String(dashboard.donationCount ?? 0), icon: 'volunteer-activism' }, { label: 'Referral code', value: dashboard.referralCode ?? '—', icon: 'qr-code' }, { label: 'Leaderboard rank', value: String(leaderboard[0]?.rank ?? '—'), icon: 'leaderboard' }].map((stat) => (
                   <View key={stat.label} style={styles.statCard}>
                     <LinearGradient colors={['#7A4B00', '#B97712']} style={styles.statIcon}>
                       <MaterialIcons name={stat.icon as any} size={18} color="#fff" />
@@ -70,15 +68,15 @@ export default function CollectorDashboardRoute() {
               <View style={styles.summaryCard}>
                 <View style={styles.summaryTopRow}>
                   <View>
-                    <Text style={styles.summaryLabel}>Daily booking summary</Text>
-                    <Text style={styles.summaryValue}>42 bookings awaiting Razorpay payment</Text>
+                    <Text style={styles.summaryLabel}>Donation summary</Text>
+                    <Text style={styles.summaryValue}>{dashboard.donationCount ?? 0} successful donations</Text>
                   </View>
                   <View style={styles.summaryPill}>
-                    <Text style={styles.summaryPillText}>74% complete</Text>
+                    <Text style={styles.summaryPillText}>₹{dashboard.totalAmount ?? 0} collected</Text>
                   </View>
                 </View>
                 <View style={styles.summaryBarTrack}>
-                  <LinearGradient colors={['#7B4B00', '#B97712', '#E0A31F']} style={styles.summaryBarFill} />
+                  <LinearGradient colors={['#7B4B00', '#B97712', '#E0A31F']} style={[styles.summaryBarFill, { width: dashboard.donationCount ? '100%' : '0%' }]} />
                 </View>
               </View>
             </BlurView>
@@ -133,7 +131,7 @@ export default function CollectorDashboardRoute() {
                 <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
                   <View style={styles.modalHandle} />
                   <Text style={styles.modalTitle}>Collector ID Card</Text>
-                  {user ? <CollectorIDCard user={user} /> : null}
+                  {user ? <CollectorIDCard user={user} collectorId={collectorData?.collectorId} /> : null}
                   <Pressable
                     style={styles.modalClose}
                     onPress={() => setShowIDCard(false)}
@@ -162,9 +160,9 @@ export default function CollectorDashboardRoute() {
               <MaterialIcons name="event-note" size={22} color="#8B5A00" />
             </View>
             <View style={styles.taskCopy}>
-              <Text style={styles.taskTitle}>{item.title}</Text>
-              <Text style={styles.taskDescription}>{item.description}</Text>
-              <Text style={styles.taskStatus}>{item.status}</Text>
+              <Text style={styles.taskTitle}>{item.donorName ?? 'Anonymous donor'}</Text>
+              <Text style={styles.taskDescription}>{item.cause ?? 'Donation'}</Text>
+              <Text style={styles.taskStatus}>₹{item.amount ?? 0} · {item.date ? new Date(item.date).toLocaleDateString() : 'Successful'}</Text>
             </View>
           </Pressable>
         )}

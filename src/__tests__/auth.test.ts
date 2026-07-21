@@ -1,43 +1,52 @@
 /**
  * Smoke tests — Auth Service (auth critical path)
- * Mocks Supabase client at the module boundary and verifies
- * that signIn/signOut/getCurrentUser behave correctly under
- * success and error conditions.
+ * Mocks Firebase auth and the API client at the module boundary and verifies
+ * that authenticatePhone/confirmPhoneOtp/signOut/getCurrentUser behave correctly.
  */
 
-// ── Mock Supabase (jest.mock is hoisted; use factory with inline jest.fn()) ───
-jest.mock('../lib/supabase', () => ({
-  getSupabaseClient: jest.fn(() => ({
-    auth: {
-      getSession: jest.fn(),
-      signInWithPassword: jest.fn(),
-      signOut: jest.fn(),
-    },
-    from: jest.fn(),
-  })),
+import { authenticatePhone, confirmPhoneOtp, signOut, getCurrentUser } from '../services/auth'
+import * as firebaseAuth from '@react-native-firebase/auth'
+import * as SecureStore from 'expo-secure-store'
+import { useAuthStore } from '../store/useAuthStore'
+
+jest.mock('@react-native-firebase/auth', () => {
+  const mockUser = {
+    getIdToken: jest.fn(),
+  }
+  const mockConfirmationResult = {
+    confirm: jest.fn(),
+  }
+  const mockAuth = {
+    signInWithPhoneNumber: jest.fn(),
+    signOut: jest.fn(),
+    currentUser: null,
+  }
+  const authFunc = jest.fn(() => mockAuth)
+  return {
+    getAuth: jest.fn(() => mockAuth),
+    signInWithPhoneNumber: jest.fn((auth, phone) => mockAuth.signInWithPhoneNumber(phone)),
+    signOut: jest.fn((auth) => mockAuth.signOut()),
+    getIdToken: jest.fn((user, force) => user.getIdToken(force)),
+    __mockUser: mockUser,
+    __mockConfirmationResult: mockConfirmationResult,
+    __mockAuth: mockAuth,
+  }
+})
+
+jest.mock('expo-secure-store', () => ({
+  setItemAsync: jest.fn(),
+  getItemAsync: jest.fn(),
+  deleteItemAsync: jest.fn(),
 }))
 
-import { getSupabaseClient } from '../lib/supabase'
-import { signIn, signOut, getCurrentUser } from '../services/auth'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function getAuthMocks() {
-  const client = (getSupabaseClient as jest.Mock)()
-  return {
-    getSession: client.auth.getSession as jest.Mock,
-    signInWithPassword: client.auth.signInWithPassword as jest.Mock,
-    signOut: client.auth.signOut as jest.Mock,
-    from: client.from as jest.Mock,
-  }
-}
-
-function buildDbChain(returnValue: { data: unknown; error: unknown }) {
-  return {
-    select: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    maybeSingle: jest.fn().mockResolvedValue(returnValue),
-  }
-}
+jest.mock('../store/useAuthStore', () => ({
+  useAuthStore: {
+    getState: jest.fn(() => ({
+      setUser: jest.fn(),
+      clearUser: jest.fn(),
+    })),
+  },
+}))
 
 const mockUserRow = {
   id: 'user-abc',
@@ -54,127 +63,137 @@ const mockUserRow = {
   deleted_at: null,
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-describe('signIn', () => {
+// Global fetch mock
+global.fetch = jest.fn()
+
+describe('authenticatePhone', () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    // Re-initialize: getSupabaseClient is called fresh each time, but we need
-    // the mock to return a consistent object. Easiest fix: set mockReturnValue.
-    ;(getSupabaseClient as jest.Mock).mockReturnValue({
-      auth: {
-        getSession: jest.fn(),
-        signInWithPassword: jest.fn(),
-        signOut: jest.fn(),
-      },
-      from: jest.fn(),
-    })
   })
 
-  it('returns an AuthUser on successful sign-in', async () => {
-    const mocks = getAuthMocks()
-    mocks.signInWithPassword.mockResolvedValue({
-      data: { user: { id: 'user-abc', email: 'user@example.com', user_metadata: {} } },
-      error: null,
-    })
-    mocks.from.mockReturnValue(buildDbChain({ data: mockUserRow, error: null }))
+  it('calls Firebase signInWithPhoneNumber with the formatted number', async () => {
+    const authModule = require('@react-native-firebase/auth')
+    authModule.__mockAuth.signInWithPhoneNumber.mockResolvedValue(authModule.__mockConfirmationResult)
 
-    const user = await signIn('user@example.com', 'password123')
+    const result = await authenticatePhone('9876543210')
+    expect(authModule.__mockAuth.signInWithPhoneNumber).toHaveBeenCalledWith('+919876543210')
+    expect(result).toBe(authModule.__mockConfirmationResult)
+  })
+})
+
+describe('confirmPhoneOtp', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('completes the token exchange and returns an AuthUser on successful confirm', async () => {
+    const authModule = require('@react-native-firebase/auth')
+    const confirmation = authModule.__mockConfirmationResult
+    
+    // 1. Firebase confirm returns the user
+    confirmation.confirm.mockResolvedValue({ user: authModule.__mockUser })
+    // 2. Getting Firebase token
+    authModule.__mockUser.getIdToken.mockResolvedValue('firebase-token-123')
+    
+    // 3. Mock API responses
+    ;(global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, token: 'donation-jwt-456' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ user: mockUserRow }),
+      })
+
+    const user = await confirmPhoneOtp(confirmation, '123456')
+    
+    expect(confirmation.confirm).toHaveBeenCalledWith('123456')
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith('shri_gurudev_firebase_id_token', 'firebase-token-123')
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith('shri_gurudev_donation_jwt', 'donation-jwt-456')
+    
     expect(user.id).toBe('user-abc')
-    expect(user.email).toBe('user@example.com')
+    expect(user.fullName).toBe('Ashram User')
     expect(user.role).toBe('user')
   })
 
-  it('throws a readable error on invalid credentials', async () => {
-    const mocks = getAuthMocks()
-    mocks.signInWithPassword.mockResolvedValue({
-      data: { user: null },
-      error: { message: 'Invalid login credentials' },
-    })
+  it('throws when Firebase confirm returns no user', async () => {
+    const authModule = require('@react-native-firebase/auth')
+    const confirmation = authModule.__mockConfirmationResult
+    confirmation.confirm.mockResolvedValue({ user: null })
 
-    await expect(signIn('bad@example.com', 'wrong')).rejects.toThrow(
-      /check your email and password/i,
-    )
-  })
-
-  it('throws when Supabase returns no user object', async () => {
-    const mocks = getAuthMocks()
-    mocks.signInWithPassword.mockResolvedValue({
-      data: { user: null },
-      error: null,
-    })
-
-    await expect(signIn('x@example.com', 'pass')).rejects.toThrow(
-      /did not return a user/i,
-    )
+    await expect(confirmPhoneOtp(confirmation, '123456')).rejects.toThrow(/Firebase did not return a user/i)
   })
 })
 
 describe('signOut', () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    ;(getSupabaseClient as jest.Mock).mockReturnValue({
-      auth: {
-        getSession: jest.fn(),
-        signInWithPassword: jest.fn(),
-        signOut: jest.fn(),
-      },
-      from: jest.fn(),
-    })
   })
 
-  it('resolves without error on success', async () => {
-    const mocks = getAuthMocks()
-    mocks.signOut.mockResolvedValue({ error: null })
-    await expect(signOut()).resolves.toBeUndefined()
-  })
+  it('clears firebase auth, secure store, and store state', async () => {
+    const authModule = require('@react-native-firebase/auth')
+    const mockClearUser = jest.fn()
+    ;(useAuthStore.getState as jest.Mock).mockReturnValue({ clearUser: mockClearUser })
 
-  it('throws a readable error on failure', async () => {
-    const mocks = getAuthMocks()
-    mocks.signOut.mockResolvedValue({ error: { message: 'Network error' } })
-    await expect(signOut()).rejects.toThrow(/Network error/i)
+    await signOut()
+
+    expect(authModule.__mockAuth.signOut).toHaveBeenCalled()
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('shri_gurudev_firebase_id_token')
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('shri_gurudev_donation_jwt')
+    expect(mockClearUser).toHaveBeenCalled()
   })
 })
 
 describe('getCurrentUser', () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    ;(getSupabaseClient as jest.Mock).mockReturnValue({
-      auth: {
-        getSession: jest.fn(),
-        signInWithPassword: jest.fn(),
-        signOut: jest.fn(),
-      },
-      from: jest.fn(),
-    })
   })
 
-  it('returns null when there is no active session', async () => {
-    const mocks = getAuthMocks()
-    mocks.getSession.mockResolvedValue({ data: { session: null }, error: null })
+  it('returns null when there is no active firebase user', async () => {
+    const authModule = require('@react-native-firebase/auth')
+    authModule.__mockAuth.currentUser = null
+
     const user = await getCurrentUser()
     expect(user).toBeNull()
   })
 
-  it('returns an AuthUser when a session exists', async () => {
-    const mocks = getAuthMocks()
-    mocks.getSession.mockResolvedValue({
-      data: {
-        session: {
-          user: { id: 'user-abc', email: 'user@example.com', user_metadata: {} },
-        },
-      },
-      error: null,
-    })
-    mocks.from.mockReturnValue(buildDbChain({ data: mockUserRow, error: null }))
+  it('returns an AuthUser when a session exists and backend succeeds', async () => {
+    const authModule = require('@react-native-firebase/auth')
+    authModule.__mockAuth.currentUser = authModule.__mockUser
+    authModule.__mockUser.getIdToken.mockResolvedValue('firebase-token-123')
+
+    ;(global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, token: 'donation-jwt-456' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ user: mockUserRow }),
+      })
 
     const user = await getCurrentUser()
+    
     expect(user).not.toBeNull()
     expect(user?.id).toBe('user-abc')
   })
 
-  it('returns null when getSession returns an error', async () => {
-    const mocks = getAuthMocks()
-    mocks.getSession.mockResolvedValue({ data: { session: null }, error: { message: 'fail' } })
+  it('returns null when the backend profile fetch fails', async () => {
+    const authModule = require('@react-native-firebase/auth')
+    authModule.__mockAuth.currentUser = authModule.__mockUser
+    authModule.__mockUser.getIdToken.mockResolvedValue('firebase-token-123')
+
+    ;(global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, token: 'donation-jwt-456' }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: 'Unauthorized' }),
+      })
+
     const user = await getCurrentUser()
     expect(user).toBeNull()
   })

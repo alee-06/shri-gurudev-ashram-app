@@ -1,17 +1,15 @@
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
+  KeyboardAvoidingView,
+  Platform,
   View,
 } from 'react-native'
-import * as ImagePicker from 'expo-image-picker'
-import { Image } from 'expo-image'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -20,6 +18,8 @@ import { refreshCurrentUser } from '../src/services/auth'
 import { submitVerification, uploadAadhaar, uploadSelfie } from '../src/services/verification'
 import { getFriendlyApiError } from '../src/utils/apiErrors'
 import { isValidAadhaarNumber, normalizeDigits } from '../src/utils/validation'
+import AppInput from '../src/components/AppInput'
+import ImageUploadWidget from '../src/components/ImageUploadWidget'
 
 type VerificationFormErrors = {
   aadhaarNumber?: string
@@ -197,51 +197,63 @@ export default function VerifyIdentityRoute() {
     )
   }
 
+  const formatAadhaar = (val: string) => {
+    const digits = val.replace(/\D/g, '').slice(0, 12)
+    return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void refreshStatus()} />}
-        contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 16) }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <Header onBack={() => router.back()} />
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void refreshStatus()} />}
+          contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 16) }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Header onBack={() => router.back()} disabled={isSubmitting} />
 
-        {verificationStatus === 'rejected' ? <StatusCard verificationStatus={verificationStatus} /> : null}
+          {verificationStatus === 'rejected' ? <StatusCard verificationStatus={verificationStatus} /> : null}
 
-        <View style={styles.infoCard}>
-          <MaterialIcons name="info-outline" size={20} color="#E65C00" />
-          <Text style={styles.infoText}>
-            Verify your identity by uploading your Aadhaar document and a selfie. This is required before you can create a booking.
-          </Text>
-        </View>
+          <View style={styles.infoCard}>
+            <MaterialIcons name="info-outline" size={20} color="#E65C00" />
+            <Text style={styles.infoText}>
+              Verify your identity by uploading your Aadhaar document and a selfie. This is required before you can create a booking.
+            </Text>
+          </View>
 
-        <View style={styles.card}>
-          <Text style={styles.inputLabel}>Aadhaar Number</Text>
-          <TextInput
-            value={aadhaarNumber}
-            onChangeText={(value) => setAadhaarNumber(normalizeDigits(value, 12))}
-            placeholder="Enter 12-digit Aadhaar number"
-            placeholderTextColor="#9E9080"
-            keyboardType="number-pad"
-            style={[styles.input, fieldErrors.aadhaarNumber ? styles.inputError : null]}
-          />
-          <Text style={styles.hint}>{aadhaarNumber.length}/12 digits</Text>
-          {fieldErrors.aadhaarNumber ? <Text style={styles.fieldError}>{fieldErrors.aadhaarNumber}</Text> : null}
-        </View>
+          <View style={styles.card}>
+            <AppInput
+              label="Aadhaar Number"
+              value={formatAadhaar(aadhaarNumber)}
+              onChangeText={(value: string) => {
+                setAadhaarNumber(value.replace(/\D/g, '').slice(0, 12))
+                if (fieldErrors.aadhaarNumber) setFieldErrors({})
+              }}
+              placeholder="Enter 12-digit Aadhaar number"
+              keyboardType="number-pad"
+              errorMessage={fieldErrors.aadhaarNumber}
+              editable={!isSubmitting}
+              maxLength={14} // 12 digits + 2 spaces
+            />
+            <Text style={styles.hint}>{aadhaarNumber.length}/12 digits</Text>
+          </View>
 
-        <DocumentCard
+        <ImageUploadWidget
           title="Aadhaar document"
-          label={temporaryAadhaarUri ? 'Image selected' : 'No file selected'}
+          label={temporaryAadhaarUri ? 'Aadhaar image selected' : 'No file selected'}
           uri={temporaryAadhaarUri}
           errorMessage={fieldErrors.aadhaarImage}
-          onPress={() => void pickImage(setTemporaryAadhaarUri)}
+          onSelect={setTemporaryAadhaarUri}
+          disabled={!canSubmitForm || isSubmitting}
         />
-        <DocumentCard
+        <ImageUploadWidget
           title="Selfie photo"
-          label={temporarySelfieUri ? 'Image selected' : 'No file selected'}
+          label={temporarySelfieUri ? 'Selfie selected' : 'No file selected'}
           uri={temporarySelfieUri}
           errorMessage={fieldErrors.selfieImage}
-          onPress={() => void pickImage(setTemporarySelfieUri)}
+          onSelect={setTemporarySelfieUri}
+          disabled={!canSubmitForm || isSubmitting}
         />
 
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
@@ -264,38 +276,18 @@ export default function VerifyIdentityRoute() {
           )}
         </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
 
-async function pickImage(setUri: (uri: string | null) => void) {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
 
-  if (!permission.granted) {
-    Alert.alert('Permission needed', 'Please allow photo access to upload documents.')
-    return
-  }
 
-  const result = await ImagePicker.launchImageLibraryAsync({
-    allowsEditing: true,
-    quality: 0.8,
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-  })
-
-  const asset = result.assets?.[0]
-
-  if (result.canceled || !asset) {
-    return
-  }
-
-  setUri(asset.uri)
-}
-
-function Header({ onBack }: { onBack: () => void }) {
+function Header({ onBack, disabled }: { onBack: () => void, disabled?: boolean }) {
   return (
     <View style={styles.header}>
-      <Pressable style={styles.backButton} onPress={onBack}>
-        <MaterialIcons name="arrow-back" size={22} color="#8B5A00" />
+      <Pressable style={styles.backButton} onPress={onBack} disabled={disabled}>
+        <MaterialIcons name="arrow-back" size={24} color="#8B5A00" />
       </Pressable>
       <View>
         <Text style={styles.kicker}>User verification</Text>
@@ -322,43 +314,6 @@ function StatusCard({ verificationStatus }: { verificationStatus: 'not_submitted
         <Text style={[styles.verifyTitle, { color: tone.color }]}>{tone.title}</Text>
         <Text style={styles.verifySubtitle}>{tone.subtitle}</Text>
       </View>
-    </View>
-  )
-}
-
-function DocumentCard({
-  title,
-  label,
-  uri,
-  errorMessage,
-  onPress,
-}: {
-  title: string
-  label: string
-  uri: string | null
-  errorMessage?: string
-  onPress: () => void
-}) {
-  return (
-    <View style={styles.documentCard}>
-      <View style={styles.documentHeader}>
-        <View>
-          <Text style={styles.documentTitle}>{title}</Text>
-          <Text style={styles.documentHint}>{label || 'No file selected'}</Text>
-        </View>
-        <Pressable style={styles.uploadButton} onPress={onPress}>
-          <Text style={styles.uploadButtonText}>{uri ? 'Replace' : 'Upload'}</Text>
-        </Pressable>
-      </View>
-      {errorMessage ? <Text style={styles.fieldError}>{errorMessage}</Text> : null}
-      {uri ? (
-        <Image source={{ uri }} style={styles.preview} contentFit="cover" />
-      ) : (
-        <Pressable style={styles.placeholder} onPress={onPress}>
-          <MaterialIcons name="add-photo-alternate" size={34} color="#8B5A00" />
-          <Text style={styles.placeholderText}>Tap to choose image</Text>
-        </Pressable>
-      )}
     </View>
   )
 }
@@ -398,25 +353,6 @@ const styles = StyleSheet.create({
   inputError: { borderColor: '#D32F2F', backgroundColor: '#FFF8F8' },
   hint: { color: '#9E9080', fontSize: 12, fontWeight: '700' },
   fieldError: { color: '#D32F2F', fontSize: 12, fontWeight: '700', marginTop: 4 },
-  documentCard: { borderRadius: 26, backgroundColor: '#fff', padding: 18, borderWidth: 1, borderColor: '#F0E7DD', gap: 14 },
-  documentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  documentTitle: { color: '#2B231B', fontSize: 16, fontWeight: '900' },
-  documentHint: { color: '#9E9080', fontSize: 12, fontWeight: '700', marginTop: 4 },
-  uploadButton: { borderRadius: 999, backgroundColor: '#FFF0D9', paddingHorizontal: 14, paddingVertical: 10 },
-  uploadButtonText: { color: '#993D00', fontSize: 13, fontWeight: '900' },
-  preview: { width: '100%', height: 190, borderRadius: 18 },
-  placeholder: {
-    height: 190,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: '#F0E7DD',
-    backgroundColor: '#FCFAF6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  placeholderText: { color: '#7E7162', fontSize: 13, fontWeight: '800' },
   primaryButton: {
     minHeight: 58,
     borderRadius: 999,

@@ -1,52 +1,78 @@
-import React, { useState } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import React, { useRef, useState } from 'react'
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
-import { useRouter } from 'expo-router'
+import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuthStore } from '../../src/store/useAuthStore'
-import { signIn } from '../../src/services/auth'
+import { confirmPhoneOtp, requestPhoneOtp } from '../../src/services/auth'
+import type { ConfirmationResult } from '@react-native-firebase/auth'
 import { getFriendlyApiError } from '../../src/utils/apiErrors'
-import { isValidEmail } from '../../src/utils/validation'
+import { isValidPhoneNumber, normalizeDigits } from '../../src/utils/validation'
+import AppInput from '../../src/components/AppInput'
 
-export default function LoginRoute() {
+export default function PhoneAuthRoute() {
   const router = useRouter()
+  const params = useLocalSearchParams<{ returnTo?: string }>()
+  const returnTo = params.returnTo
+
   const setUser = useAuthStore((state) => state.setUser)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null)
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
+  const [fieldErrors, setFieldErrors] = useState<{ phone?: string; code?: string }>({})
 
-  const validate = () => {
+  const codeInputRef = useRef<TextInput>(null)
+
+  const validatePhone = () => {
     const nextErrors: typeof fieldErrors = {}
-
-    if (!isValidEmail(email)) {
-      nextErrors.email = 'Email is invalid.'
-    }
-
-    if (password.trim().length < 1) {
-      nextErrors.password = 'Password is required.'
-    }
-
+    if (!isValidPhoneNumber(phone)) { nextErrors.phone = 'Phone number must be 10 digits.' }
     setFieldErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
   }
 
-  const handleLogin = async () => {
-    if (!validate()) {
-      return
+  const validateCode = () => {
+    const nextErrors: typeof fieldErrors = {}
+    if (code.length < 6) { nextErrors.code = 'Please enter a valid 6-digit OTP.' }
+    setFieldErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  const handleContinue = async () => {
+    if (isSubmitting) return
+
+    if (!confirmation) {
+      if (!validatePhone()) return
+    } else {
+      if (!validateCode()) return
     }
 
     setIsSubmitting(true)
     setErrorMessage('')
 
     try {
-      const user = await signIn(email.trim(), password)
-      setUser(user)
-      router.replace('/(tabs)/home' as never)
+      if (!confirmation) {
+        const result = await requestPhoneOtp(phone)
+        setConfirmation(result)
+        // Focus OTP field automatically on next render
+        setTimeout(() => codeInputRef.current?.focus(), 100)
+      } else {
+        const user = await confirmPhoneOtp(confirmation, code)
+        setUser(user)
+        
+        if (!user.fullName.trim()) {
+          router.replace({ pathname: '/edit-profile', params: { onboarding: '1', returnTo } } as never)
+        } else if (returnTo) {
+          router.replace(returnTo as never)
+        } else {
+          router.replace('/(tabs)/home' as never)
+        }
+      }
     } catch (error) {
-      setErrorMessage(getFriendlyApiError(error, 'Login failed. Please check your email and password.', [{ match: /invalid/i, message: 'Login failed. Please check your email and password.' }]))
+      setErrorMessage(getFriendlyApiError(error, 'Could not sign you in. Please try again.', [{ match: /invalid/i, message: 'Invalid OTP. Please check and try again.' }]))
     } finally {
       setIsSubmitting(false)
     }
@@ -54,92 +80,86 @@ export default function LoginRoute() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.iconWrap}>
-          <MaterialIcons name="spa" size={28} color="#8B5A00" />
-        </View>
-        <Text style={styles.kicker}>Welcome back</Text>
-        <Text style={styles.title}>Login to Ashram App</Text>
-        <Input label="Email" value={email} onChangeText={setEmail} placeholder="name@example.com" errorMessage={fieldErrors.email} />
-        <Input label="Password" value={password} onChangeText={setPassword} placeholder="Enter password" secureTextEntry errorMessage={fieldErrors.password} />
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-        <Pressable onPress={() => void handleLogin()} disabled={isSubmitting} style={({ pressed }) => [styles.button, pressed && !isSubmitting ? styles.buttonPressed : null, isSubmitting ? styles.buttonDisabled : null]}>
-          <LinearGradient colors={['#7B4B00', '#B97512', '#E0A31F']} style={styles.primaryButton}>
-            {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Login</Text>}
-          </LinearGradient>
-        </Pressable>
-        <View style={styles.linkRow}>
-          <Pressable onPress={() => router.push('/(auth)/forgot-password' as never)}>
-            <Text style={styles.linkText}>Forgot Password</Text>
-          </Pressable>
-          <Pressable onPress={() => router.replace('/(auth)/splash' as never)}>
-            <Text style={styles.linkText}>Back</Text>
-          </Pressable>
-        </View>
-      </View>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <View style={styles.content}>
+            <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')} style={styles.backButton}>
+              <MaterialIcons name="arrow-back" size={22} color="#8B5A00" />
+            </Pressable>
+            <View style={styles.iconWrap}>
+              <MaterialIcons name="spa" size={28} color="#8B5A00" />
+            </View>
+            <Text style={styles.kicker}>Phone authentication</Text>
+            <Text style={styles.title}>Continue with your phone</Text>
+            
+            {!confirmation ? (
+              <AppInput 
+                label="Phone Number" 
+                value={phone} 
+                onChangeText={(text) => {
+                  setPhone(normalizeDigits(text, 10))
+                  if (fieldErrors.phone) setFieldErrors({})
+                }} 
+                placeholder="Enter your 10-digit mobile number" 
+                errorMessage={fieldErrors.phone}
+                keyboardType="phone-pad"
+                autoComplete="tel"
+                textContentType="telephoneNumber"
+                returnKeyType="done"
+                onSubmitEditing={handleContinue}
+                editable={!isSubmitting}
+              />
+            ) : (
+              <AppInput 
+                ref={codeInputRef}
+                label="Verification Code" 
+                value={code} 
+                onChangeText={(text) => {
+                  setCode(text.replace(/[^0-9]/g, ''))
+                  if (fieldErrors.code) setFieldErrors({})
+                }} 
+                placeholder="Enter the 6-digit OTP" 
+                errorMessage={fieldErrors.code}
+                keyboardType="number-pad"
+                autoComplete="one-time-code"
+                textContentType="oneTimeCode"
+                returnKeyType="done"
+                onSubmitEditing={handleContinue}
+                editable={!isSubmitting}
+                maxLength={6}
+              />
+            )}
+            
+            {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+            
+            <Pressable 
+              onPress={() => void handleContinue()} 
+              disabled={isSubmitting} 
+              style={({ pressed }) => [styles.button, pressed && !isSubmitting ? styles.buttonPressed : null, isSubmitting ? styles.buttonDisabled : null]}
+            >
+              <LinearGradient colors={['#7B4B00', '#B97512', '#E0A31F']} style={styles.primaryButton}>
+                {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{confirmation ? 'Verify OTP' : 'Send OTP'}</Text>}
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
-  )
-}
-
-function Input({
-  label,
-  value,
-  onChangeText,
-  placeholder,
-  secureTextEntry,
-  errorMessage,
-}: {
-  label: string
-  value: string
-  onChangeText: (value: string) => void
-  placeholder: string
-  secureTextEntry?: boolean
-  errorMessage?: string
-}) {
-  return (
-    <View style={styles.inputBlock}>
-      <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#9E9080"
-        secureTextEntry={secureTextEntry}
-        autoCapitalize="none"
-        style={[styles.input, errorMessage ? styles.inputError : null]}
-      />
-      {errorMessage ? <Text style={styles.fieldError}>{errorMessage}</Text> : null}
-    </View>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAF6F0' },
+  scrollContent: { flexGrow: 1 },
   content: { flex: 1, padding: 24, justifyContent: 'center', gap: 16 },
+  backButton: { alignSelf: 'flex-start', width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   iconWrap: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#FFF0D9', alignItems: 'center', justifyContent: 'center' },
   kicker: { color: '#E65C00', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.4 },
   title: { color: '#2B231B', fontSize: 32, lineHeight: 38, fontWeight: '900', marginBottom: 6 },
-  inputBlock: { gap: 8 },
-  inputLabel: { color: '#2B231B', fontSize: 13, fontWeight: '900' },
-  input: {
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: '#F0E7DD',
-    backgroundColor: '#fff',
-    color: '#2B231B',
-    fontSize: 15,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minHeight: 54,
-  },
-  inputError: { borderColor: '#D32F2F', backgroundColor: '#FFF8F8' },
   primaryButton: { minHeight: 58, borderRadius: 999, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '900' },
   buttonPressed: { opacity: 0.85 },
   button: { borderRadius: 999 },
   buttonDisabled: { opacity: 0.7 },
-  errorText: { color: '#B00020', fontSize: 13, fontWeight: '700' },
-  fieldError: { color: '#B00020', fontSize: 12, fontWeight: '700' },
-  linkRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
-  linkText: { color: '#8B5A00', fontSize: 14, fontWeight: '900' },
+  errorText: { color: '#B00020', fontSize: 14, fontWeight: '700', textAlign: 'center', marginTop: 4 },
 })

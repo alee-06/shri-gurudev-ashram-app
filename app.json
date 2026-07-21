@@ -7,11 +7,17 @@
     "scheme": "shri-gurudev-ashram-app",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF6F0"
+    },
     "experiments": {
       "typedRoutes": true
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shrigurudevashram.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +28,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.shrigurudevashram.app",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "bundler": "metro",
@@ -40,7 +47,10 @@
           "color": "#ffffff",
           "defaultChannel": "default"
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "expo-secure-store"
     ],
     "extra": {
       "router": {},

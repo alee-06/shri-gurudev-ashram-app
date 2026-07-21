@@ -9,7 +9,7 @@
 CREATE TABLE IF NOT EXISTS public.seva_bookings (
   id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_reference   text        NOT NULL UNIQUE,
-  user_id             uuid        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id             uuid        NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
 
   -- Extensible type column: add new values here as new seva types are introduced
   seva_type           text        NOT NULL

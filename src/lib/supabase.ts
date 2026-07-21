@@ -70,9 +70,8 @@ export function getSupabaseClient() {
 
   client = createClient<Database>(supabaseUrl, supabaseKey, {
     auth: {
-      storage: guardedStorage as any,
-      autoRefreshToken: true,
-      persistSession: true,
+      persistSession: false,
+      autoRefreshToken: false,
       detectSessionInUrl: false,
     },
   })

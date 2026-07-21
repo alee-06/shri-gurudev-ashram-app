@@ -4,9 +4,11 @@ import { MaterialIcons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import RazorpayCheckout from 'react-native-razorpay'
 import { SEVA_LABELS, generateTransactionId, getSevaAmount } from '../../src/constants/seva'
 import type { SevaType } from '../../src/constants/seva'
-import { mockPaySevaBooking } from '../../src/services/seva'
+import { createSevaOrder, verifySevaPayment } from '../../src/services/seva'
+import { useAuthStore } from '../../src/store/useAuthStore'
 import { useSevaStore } from '../../src/store/useSevaStore'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,7 +41,7 @@ export default function SevaPaymentRoute() {
 
   const [isPaying, setIsPaying] = React.useState(false)
   const [errorMessage, setErrorMessage] = React.useState('')
-  const [simulateFailure, setSimulateFailure] = React.useState(false)
+  const currentUser = useAuthStore((s) => s.user)
 
   const type = (sevaType as SevaType) ?? 'annadan'
   const label = SEVA_LABELS[type] ?? SEVA_LABELS.annadan
@@ -51,24 +53,49 @@ export default function SevaPaymentRoute() {
       return
     }
 
+    const key = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID
+
+    if (!key) {
+      setErrorMessage('Razorpay key is not configured.')
+      return
+    }
+
     setIsPaying(true)
     setErrorMessage('')
 
     try {
-      if (simulateFailure) {
-        throw new Error('Payment gateway declined or timed out. Please retry or save draft.')
-      }
+      const { order } = await createSevaOrder(sevaBookingId)
 
-      // Phase 1: Mock payment — instant success
-      // Phase 2: Replace with createRazorpayOrder + RazorpayCheckout + verifyRazorpayPayment
-      await mockPaySevaBooking(sevaBookingId)
+      const checkoutResult = await RazorpayCheckout.open({
+        key,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'Shri Gurudev Ashram',
+        description: `Seva: ${label}`,
+        order_id: order.id,
+        prefill: {
+          name: currentUser?.fullName ?? devotee,
+          email: currentUser?.email ?? undefined,
+          contact: currentUser?.phone ?? phone,
+        },
+        theme: {
+          color: '#E65C00',
+        },
+      })
+
+      await verifySevaPayment({
+        bookingId: sevaBookingId,
+        razorpay_order_id: checkoutResult.razorpay_order_id,
+        razorpay_payment_id: checkoutResult.razorpay_payment_id,
+        razorpay_signature: checkoutResult.razorpay_signature,
+      })
 
       router.replace({
         pathname: '/(tabs)/seva-success',
         params: {
           sevaType: type,
           reference: reference ?? '',
-          transactionId: transactionId || generateTransactionId(),
+          transactionId: checkoutResult.razorpay_payment_id,
           devotee: devotee ?? '',
           phone: phone ?? '',
           sevaDate: sevaDate ?? '',
@@ -143,12 +170,6 @@ export default function SevaPaymentRoute() {
           </Text>
         </View>
 
-        {/* QA Test Toggle for Failure Workflow */}
-        <Pressable onPress={() => setSimulateFailure(!simulateFailure)} style={styles.simToggle}>
-          <Text style={styles.simToggleText}>
-            [{simulateFailure ? '🔴 Simulate Failure: ON' : '🟢 Simulate Failure: OFF'}]
-          </Text>
-        </Pressable>
 
         {/* Error / Failure Workflow UI */}
         {errorMessage ? (

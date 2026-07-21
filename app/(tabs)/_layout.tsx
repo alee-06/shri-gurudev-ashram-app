@@ -1,18 +1,13 @@
 import React from 'react';
-import { Redirect, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import CustomTabBar from '../../src/components/CustomTabBar';
 
 export default function TabsLayout() {
-  const user = useAuthStore((state) => state.user);
   const isHydrated = useAuthStore((state) => state.isHydrated);
 
   if (!isHydrated) {
     return null;
-  }
-
-  if (!user) {
-    return <Redirect href={'/(auth)/splash' as any} />;
   }
 
   return (

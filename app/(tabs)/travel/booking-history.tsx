@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { getBookingsByUser } from '../../../src/services'
 import { Booking, BookingStatus } from '../../../src/types/travel'
+import { useProtectedRoute } from '../../../src/hooks/useProtectedRoute'
 
 export default function BookingHistoryRoute() {
   const router = useRouter()
@@ -14,6 +15,7 @@ export default function BookingHistoryRoute() {
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const isFetchingRef = React.useRef(false)
+  useProtectedRoute()
 
   const loadBookings = React.useCallback(async (isRefresh = false) => {
     if (isFetchingRef.current) {

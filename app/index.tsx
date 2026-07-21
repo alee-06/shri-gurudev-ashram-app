@@ -15,5 +15,5 @@ export default function IndexRoute() {
     );
   }
 
-  return <Redirect href={(user ? '/(tabs)/home' : '/(auth)/splash') as any} />;
+  return <Redirect href={'/(tabs)/home' as any} />;
 }

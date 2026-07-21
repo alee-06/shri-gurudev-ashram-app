@@ -1,11 +1,10 @@
 import React from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../src/api/queryClient';
 import { getCurrentUser } from '../src/services/auth';
-import { getSupabaseClient } from '../src/lib/supabase';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { registerPushToken } from '../src/services/pushTokenService';
 
@@ -14,9 +13,9 @@ export default function RootLayout() {
   const setUser = useAuthStore((state) => state.setUser)
   const clearUser = useAuthStore((state) => state.clearUser)
   const setHydrated = useAuthStore((state) => state.setHydrated)
+  const isHydrated = useAuthStore((state) => state.isHydrated)
 
   React.useEffect(() => {
-    const supabase = getSupabaseClient()
     let isMounted = true
 
     const syncSession = async () => {
@@ -47,39 +46,8 @@ export default function RootLayout() {
 
     void syncSession()
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!isMounted) {
-        return
-      }
-
-      if (!session?.user) {
-        clearUser()
-        setHydrated(true)
-        return
-      }
-
-      void getCurrentUser()
-        .then((currentUser) => {
-          if (!isMounted) {
-            return
-          }
-
-          if (currentUser) {
-            setUser(currentUser)
-          } else {
-            clearUser()
-          }
-        })
-        .finally(() => {
-          if (isMounted) {
-            setHydrated(true)
-          }
-        })
-    })
-
     return () => {
       isMounted = false
-      authListener.subscription.unsubscribe()
     }
   }, [clearUser, setHydrated, setUser])
 
@@ -92,6 +60,21 @@ export default function RootLayout() {
       console.warn('[pushToken] registration failed.', error)
     })
   }, [user?.id])
+
+  const router = useRouter()
+  const segments = useSegments()
+
+  React.useEffect(() => {
+    if (!isHydrated) return
+
+    const inAuthGroup = segments[0] === '(auth)'
+    
+    // If the user is authenticated but has an incomplete profile (e.g. empty fullName),
+    // force them to the onboarding screen. Guest users (user === null) are allowed.
+    if (user && !user.fullName.trim() && segments[0] !== 'edit-profile') {
+      router.replace({ pathname: '/edit-profile', params: { onboarding: '1' } } as never)
+    }
+  }, [isHydrated, user, segments, router])
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

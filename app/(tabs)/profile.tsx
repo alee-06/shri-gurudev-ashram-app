@@ -17,8 +17,12 @@ import { useRouter } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { signOut } from '../../src/services/auth'
 import { getCurrentProfileInfo, getCurrentUserYatraStats, softDeleteCurrentUser, type ProfileInfo, type YatraStats } from '../../src/services/profile'
+import { getCollectorStatus } from '../../src/services/donation'
 import { useAuthStore } from '../../src/store/useAuthStore'
 import { useBookingDraftStore } from '../../src/store/useBookingDraftStore'
+import { useSevaStore } from '../../src/store/useSevaStore'
+import type { SevaBooking } from '../../src/types/seva'
+import { useProtectedRoute } from '../../src/hooks/useProtectedRoute'
 
 const SUPPORT_CONFIG = {
   phone: '+91-XXXXXXXXXX',
@@ -40,6 +44,7 @@ export default function ProfileRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const storeUser = useAuthStore((state) => state.user)
+  const isHydrated = useAuthStore((state) => state.isHydrated)
   const logout = useAuthStore((state) => state.logout)
   const resetDraft = useBookingDraftStore((state) => state.resetDraft)
   const clearAadhaar = useAuthStore((state) => state.setAadhaarNumber)
@@ -52,7 +57,9 @@ export default function ProfileRoute() {
   const [isDeleting, setIsDeleting] = React.useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [errorMessage, setErrorMessage] = React.useState('')
-  const isCollector = storeUser?.role === 'collector'
+  const [collectorStatus, setCollectorStatus] = React.useState<any>(null)
+
+  useProtectedRoute()
 
   const loadProfile = React.useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -64,12 +71,14 @@ export default function ProfileRoute() {
     setErrorMessage('')
 
     try {
-      const [profileInfo, yatraStats] = await Promise.all([
+      const [profileInfo, yatraStats, collectorRes] = await Promise.all([
         getCurrentProfileInfo(),
         getCurrentUserYatraStats(),
+        getCollectorStatus().catch(() => ({ data: null }))
       ])
       setProfile(profileInfo)
       setStats(yatraStats)
+      setCollectorStatus(collectorRes.data)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not load your profile right now.')
     } finally {
@@ -136,6 +145,8 @@ export default function ProfileRoute() {
     verificationStatus: storeUser?.verificationStatus ?? 'not_submitted',
   }
 
+  if (!isHydrated || !storeUser) return null
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -187,26 +198,30 @@ export default function ProfileRoute() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>My Yatras</Text>
-            <Pressable onPress={() => router.push('/(tabs)/travel/booking-history' as never)}>
-              <Text style={styles.seeAll}>My Bookings</Text>
+            <Text style={styles.sectionTitle}>My Activity</Text>
+            <Pressable onPress={() => router.push('/(tabs)/my-sevas' as never)}>
+              <Text style={styles.seeAll}>View All</Text>
             </Pressable>
           </View>
           <View style={styles.statsGrid}>
-            <StatCard icon="confirmation-number" label="Total Bookings" value={stats.totalBookings} />
+            <StatCard icon="confirmation-number" label="Yatra Bookings" value={stats.totalBookings} />
             <StatCard icon="event-available" label="Upcoming Yatras" value={stats.upcomingYatras} />
-            <StatCard icon="verified" label="Completed Yatras" value={stats.completedYatras} />
-            <StatCard icon="payments" label="Pending Payments" value={stats.pendingPayments} />
+            <StatCard icon="volunteer-activism" label="Active Sevas" value={
+              useSevaStore.getState().sevaHistory.filter((s: SevaBooking) => 
+                s.status === 'paid' && new Date(s.sevaDate) >= new Date(new Date().setHours(0,0,0,0))
+              ).length
+            } />
+            <StatCard icon="verified" label="Total Sevas" value={useSevaStore.getState().sevaHistory.length} />
           </View>
-          {stats.totalBookings === 0 ? (
+          {stats.totalBookings === 0 && useSevaStore.getState().sevaHistory.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No bookings yet</Text>
-              <Text style={styles.emptyText}>Your yatra booking summary will appear here once you book from Supabase.</Text>
+              <Text style={styles.emptyTitle}>No activity yet</Text>
+              <Text style={styles.emptyText}>Your bookings and sevas will appear here.</Text>
             </View>
           ) : null}
-          <Pressable style={styles.bookingsShortcut} onPress={() => router.push('/(tabs)/travel/booking-history' as never)}>
+          <Pressable style={styles.bookingsShortcut} onPress={() => router.push('/(tabs)/my-sevas' as never)}>
             <MaterialIcons name="event-note" size={22} color="#993D00" />
-            <Text style={styles.bookingsShortcutText}>My Bookings</Text>
+            <Text style={styles.bookingsShortcutText}>My Activity Dashboard</Text>
             <MaterialIcons name="chevron-right" size={22} color="#D7C7B8" />
           </Pressable>
         </View>
@@ -220,17 +235,29 @@ export default function ProfileRoute() {
           </View>
         </View>
 
-        {isCollector ? (
-          <Pressable onPress={() => router.push('/collector-dashboard' as never)} style={styles.collectorCard}>
-            <LinearGradient colors={['#993D00', '#E65C00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.collectorGradient}>
-              <MaterialIcons name="admin-panel-settings" size={28} color="#fff" />
-              <View style={styles.collectorCopy}>
-                <Text style={styles.collectorTitle}>Collector Portal</Text>
-                <Text style={styles.collectorText}>Open verification and collection dashboard.</Text>
-              </View>
-            </LinearGradient>
-          </Pressable>
-        ) : null}
+        <Pressable 
+          onPress={() => {
+            const status = collectorStatus?.collectorProfile?.status;
+            if (collectorStatus?.role === 'COLLECTOR_APPROVED' || status === 'approved') {
+              router.push('/collector-dashboard' as never)
+            } else {
+              router.push('/collector-apply' as never)
+            }
+          }} 
+          style={styles.collectorCard}
+        >
+          <LinearGradient colors={['#993D00', '#E65C00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.collectorGradient}>
+            <MaterialIcons name="admin-panel-settings" size={28} color="#fff" />
+            <View style={styles.collectorCopy}>
+              <Text style={styles.collectorTitle}>
+                {(collectorStatus?.role === 'COLLECTOR_APPROVED' || collectorStatus?.collectorProfile?.status === 'approved' || collectorStatus?.collectorProfile?.status === 'pending' || collectorStatus?.collectorProfile?.status === 'rejected') ? 'Collector Portal' : 'Become a Collector'}
+              </Text>
+              <Text style={styles.collectorText}>
+                {(collectorStatus?.role === 'COLLECTOR_APPROVED' || collectorStatus?.collectorProfile?.status === 'approved') ? 'Open verification and collection dashboard.' : 'Apply to join the Ashram operations network.'}
+              </Text>
+            </View>
+          </LinearGradient>
+        </Pressable>
 
         <View style={styles.settingsCard}>
           <SettingsRow icon="settings-outline" label="Settings" onPress={() => router.push('/settings' as never)} />

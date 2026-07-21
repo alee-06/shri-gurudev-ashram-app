@@ -33,18 +33,25 @@ export type Booking = {
   roomType?: string;
 };
 
+export type CreateBookingPassengerInput = {
+  fullName: string;
+  dob: string;
+  gender: string;
+  phone: string;
+  address: string;
+  aadhaarNumber: string;
+  aadhaarImagePath?: string;
+  selfieImagePath?: string;
+};
+
 export type CreateBookingInput = {
   packageId: string;
   travelerCount: number;
   specialNotes?: string;
-  fullName: string;
-  phoneNumber: string;
-  whatsappNumber: string;
-  dob: string;
-  address: string;
   transportType: string;
   busType?: string;
   roomType: string;
+  passengers: CreateBookingPassengerInput[];
 };
 
 export type BookingRecord = {

@@ -3,6 +3,8 @@ import { Router } from 'express'
 import { HttpError } from '../errors'
 import { razorpayWebhookSecret } from '../services/razorpay'
 import { supabaseAdmin } from '../services/supabaseAdmin'
+import { Donation } from '../models/donation'
+import { generateReceipt, publicReceiptUrl } from '../services/donationReceipt'
 
 export const razorpayWebhookRouter = Router()
 
@@ -38,6 +40,33 @@ razorpayWebhookRouter.post('/', async (request, response, next) => {
     }
 
     const payload = JSON.parse(rawBody.toString('utf8'))
+
+    // The merged server shares Razorpay's public webhook URL. Dispatch donation
+    // orders before the travel Supabase event ledger, while retaining the same
+    // raw-body signature validation and idempotent state transition.
+    const donationOrderId = payload.payload?.payment?.entity?.order_id
+    if (donationOrderId) {
+      const donation = await Donation.findOne({ razorpayOrderId: donationOrderId })
+      if (donation) {
+        const payment = payload.payload.payment.entity
+        if (payload.event === 'payment.captured' && donation.status === 'PENDING') {
+          donation.status = 'SUCCESS'
+          donation.paymentId = payment.id
+          donation.transactionRef = payment.id
+          donation.receiptNumber = `GRD-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}`
+          const filePath = await generateReceipt(donation)
+          donation.receiptUrl = publicReceiptUrl(filePath)
+          await donation.save()
+        } else if (payload.event === 'payment.failed' && donation.status !== 'SUCCESS' && donation.status !== 'FAILED') {
+          donation.status = 'FAILED'
+          donation.transactionRef = payment.id ?? null
+          donation.failureReason = payment.error_description ?? payment.error_reason ?? 'Payment failed'
+          await donation.save()
+        }
+        response.json({ received: true, donation: true })
+        return
+      }
+    }
 
     if (payload.event === 'payment.captured') {
       await reconcileCapturedPayment(payload.payload?.payment?.entity)

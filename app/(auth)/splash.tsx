@@ -20,11 +20,8 @@ export default function SplashRoute() {
           <View style={styles.actions}>
             <Pressable onPress={() => router.push('/(auth)/login' as never)}>
               <LinearGradient colors={['#7B4B00', '#B97512', '#E0A31F']} style={styles.primaryButton}>
-                <Text style={styles.primaryButtonText}>Login</Text>
+                <Text style={styles.primaryButtonText}>Continue</Text>
               </LinearGradient>
-            </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={() => router.push('/(auth)/signup' as never)}>
-              <Text style={styles.secondaryButtonText}>Create Account</Text>
             </Pressable>
           </View>
         </View>
