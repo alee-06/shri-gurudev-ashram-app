@@ -7,11 +7,7 @@
     "scheme": "shri-gurudev-ashram-app",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FAF6F0"
-    },
+
     "experiments": {
       "typedRoutes": true
     },
@@ -40,6 +36,14 @@
       "expo-image",
       "expo-font",
       "@react-native-community/datetimepicker",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#FAF6F0"
+        }
+      ],
       [
         "expo-notifications",
         {
