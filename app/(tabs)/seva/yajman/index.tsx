@@ -14,8 +14,7 @@ import { useRouter } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useSevaStore } from '../../../../src/store/useSevaStore'
-import { checkYajmanAvailability } from '../../../../src/services/seva'
-import { YAJMAN_AMOUNT } from '../../../../src/constants/seva'
+import { checkYajmanAvailability, fetchSevaPricing, fetchSevaMonthlyAvailability, DateAvailabilityInfo } from '../../../../src/services/seva'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = [
@@ -75,11 +74,24 @@ export default function YajmanCalendarRoute() {
   const [checking, setChecking] = useState(false)
   const [availabilityMsg, setAvailabilityMsg] = useState<{ available: boolean; reason?: string } | null>(null)
   const [showCalendar, setShowCalendar] = useState(false)
+  const [yajmanPrice, setYajmanPrice] = useState<number>(5100)
+  const [monthlyAvailability, setMonthlyAvailability] = useState<Record<string, DateAvailabilityInfo>>({})
+  const [loadingMonth, setLoadingMonth] = useState(false)
 
   useEffect(() => {
+    fetchSevaPricing().then((p) => { if (p?.yajman) setYajmanPrice(p.yajman) }).catch(() => {})
     resetSeva()
     setSevaType('yajman')
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const monthStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`
+    setLoadingMonth(true)
+    fetchSevaMonthlyAvailability('yajman', monthStr)
+      .then((map) => setMonthlyAvailability(map))
+      .catch((e) => console.error('Failed to load Yajman month availability:', e))
+      .finally(() => setLoadingMonth(false))
+  }, [viewYear, viewMonth])
 
   const cells = buildCalendar(viewYear, viewMonth)
   const isPast = (date: Date) => {
@@ -122,10 +134,6 @@ export default function YajmanCalendarRoute() {
     ? new Date(selectedIso).toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
     : ''
 
-  // Mock: 5th and 20th have a Yajman confirmed; 25th and 28th are on Waiting List
-  const isYajmanBooked = (date: Date) => date.getDate() === 5 || date.getDate() === 20
-  const isWaitingList = (date: Date) => date.getDate() === 25 || date.getDate() === 28
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -160,7 +168,7 @@ export default function YajmanCalendarRoute() {
                 Receive the sacred privilege of performing Guruji's Aarti during the Katha. Only one Yajman is chosen per Katha.
               </Text>
               <View style={styles.heroPricePill}>
-                <Text style={styles.heroPriceText}>₹{YAJMAN_AMOUNT.toLocaleString('en-IN')} · One Yajman Per Katha</Text>
+                <Text style={styles.heroPriceText}>₹{yajmanPrice.toLocaleString('en-IN')} · One Yajman Per Katha</Text>
               </View>
             </View>
           </LinearGradient>
@@ -234,39 +242,46 @@ export default function YajmanCalendarRoute() {
                 ))}
               </View>
 
-              <View style={styles.grid}>
-                {cells.map((date, i) => {
-                  if (!date) return <View key={`empty-${i}`} style={styles.cell} />
-                  const iso = toIso(date)
-                  const past = isPast(date)
-                  const booked = isYajmanBooked(date)
-                  const waiting = isWaitingList(date)
-                  const selected = iso === selectedIso
-                  const dotColor = past ? '#C04545' : booked ? '#E65C00' : waiting ? '#7E57C2' : '#2F7132'
-                  return (
-                    <TouchableOpacity
-                      key={iso}
-                      style={[
-                        styles.cell,
-                        selected && styles.cellSelected,
-                        (past || booked) && styles.cellPast,
-                      ]}
-                      disabled={past || booked}
-                      onPress={() => void onSelectDate(date)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={[
-                        styles.cellText,
-                        selected && styles.cellTextSelected,
-                        (past || booked) && styles.cellTextPast,
-                      ]}>
-                        {date.getDate()}
-                      </Text>
-                      <View style={[styles.bookedDot, { backgroundColor: selected ? '#fff' : dotColor }]} />
-                    </TouchableOpacity>
-                  )
-                })}
-              </View>
+              {/* Grid */}
+              {loadingMonth ? (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <ActivityIndicator color="#8B5A00" />
+                </View>
+              ) : (
+                <View style={styles.grid}>
+                  {cells.map((date, i) => {
+                    if (!date) return <View key={`empty-${i}`} style={styles.cell} />
+                    const iso = toIso(date)
+                    const past = isPast(date)
+                    const selected = iso === selectedIso
+                    const dayInfo = monthlyAvailability[iso]
+                    const booked = past ? false : (dayInfo ? !dayInfo.available : false)
+                    const dotColor = past ? '#C04545' : booked ? '#E65C00' : '#2F7132'
+                    return (
+                      <TouchableOpacity
+                        key={iso}
+                        style={[
+                          styles.cell,
+                          selected && styles.cellSelected,
+                          (past || booked) && styles.cellPast,
+                        ]}
+                        disabled={past || booked}
+                        onPress={() => void onSelectDate(date)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[
+                          styles.cellText,
+                          selected && styles.cellTextSelected,
+                          (past || booked) && styles.cellTextPast,
+                        ]}>
+                          {date.getDate()}
+                        </Text>
+                        <View style={[styles.bookedDot, { backgroundColor: selected ? '#fff' : dotColor }]} />
+                      </TouchableOpacity>
+                    )
+                  })}
+                </View>
+              )}
 
               <View style={styles.legendRow}>
                 <View style={styles.legendItem}>

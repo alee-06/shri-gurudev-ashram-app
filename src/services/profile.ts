@@ -1,6 +1,7 @@
 import { getAuthToken } from './auth'
 import type { Database } from '../types/database.types'
 import api from '../api/axiosClient'
+import { getBaseUrl } from '../utils/config'
 
 export type ProfileInfo = {
   id: string
@@ -30,17 +31,25 @@ type BookingStatsRow = Pick<BookingRow, 'id' | 'status' | 'total_amount'> & {
 }
 
 const PROFILE_IMAGE_BUCKET = 'profile-images'
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://10.0.2.2:3000'
 
 async function requestCurrentProfile(path: string, init: RequestInit = {}) {
   const token = await getAuthToken()
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init.headers ?? {}) },
-  })
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body.error ?? 'Could not load your profile.')
-  return body
+  const baseUrl = getBaseUrl()
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 6000)
+
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init.headers ?? {}) },
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error ?? 'Could not load your profile.')
+    return body
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
 
 function mapProfile(row: UserRow): ProfileInfo {

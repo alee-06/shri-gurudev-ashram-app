@@ -10,8 +10,6 @@ import AppButton from '../../../../src/components/AppButton'
 import { fetchPackages } from '../../../../src/services/packages'
 import { useBookingDraftStore } from '../../../../src/store/useBookingDraftStore'
 
-const HERO_IMAGE = 'https://images.unsplash.com/photo-1548013146-72479768bada?q=80&w=1400&auto=format&fit=crop'
-
 export default function PackageDetailsRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -44,6 +42,8 @@ export default function PackageDetailsRoute() {
     )
   }
 
+  const heroImageSource = packageItem.imageUrl ? { uri: packageItem.imageUrl } : require('../../../../assets/gurudev.jpeg')
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 24) + 100 }]}>
@@ -58,7 +58,7 @@ export default function PackageDetailsRoute() {
         </View>
 
         <View style={styles.heroCard}>
-          <Image source={{ uri: HERO_IMAGE }} style={styles.heroImage} contentFit="cover" />
+          <Image source={heroImageSource} style={styles.heroImage} contentFit="cover" />
           <LinearGradient colors={['rgba(17,10,3,0.02)', 'rgba(17,10,3,0.72)']} style={StyleSheet.absoluteFill} />
           <View style={styles.heroCopy}>
             <View style={styles.heroPill}>
@@ -83,15 +83,17 @@ export default function PackageDetailsRoute() {
           </View>
         </View>
 
-        <View style={styles.detailCard}>
-          <Text style={styles.sectionTitle}>Yatra inclusions</Text>
-          {['Guided darshan coordination', 'Comfortable stay support', 'Seva-focused travel assistance'].map((item) => (
-            <View key={item} style={styles.inclusionRow}>
-              <MaterialIcons name="check-circle" size={18} color="#B97512" />
-              <Text style={styles.inclusionText}>{item}</Text>
-            </View>
-          ))}
-        </View>
+        {packageItem.inclusions && packageItem.inclusions.length > 0 ? (
+          <View style={styles.detailCard}>
+            <Text style={styles.sectionTitle}>Yatra inclusions</Text>
+            {packageItem.inclusions.map((item) => (
+              <View key={item} style={styles.inclusionRow}>
+                <MaterialIcons name="check-circle" size={18} color="#B97512" />
+                <Text style={styles.inclusionText}>{item}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <Pressable
           onPress={() => {

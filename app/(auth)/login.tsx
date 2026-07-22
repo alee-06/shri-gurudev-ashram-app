@@ -78,12 +78,22 @@ export default function PhoneAuthRoute() {
     }
   }
 
+  const handleBack = () => {
+    if (returnTo) {
+      router.replace('/(tabs)/home')
+    } else if (router.canGoBack()) {
+      router.back()
+    } else {
+      router.replace('/(tabs)/home')
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.content}>
-            <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')} style={styles.backButton}>
+            <Pressable onPress={handleBack} style={styles.backButton}>
               <MaterialIcons name="arrow-back" size={22} color="#8B5A00" />
             </Pressable>
             <View style={styles.iconWrap}>

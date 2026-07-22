@@ -20,20 +20,6 @@ import { fetchPackages } from '../../../src/services/packages'
 import { useBookingDraftStore } from '../../../src/store/useBookingDraftStore'
 import { TravelPackage } from '../../../src/types/travel'
 
-const CARD_IMAGES = [
-  'https://images.unsplash.com/photo-1548013146-72479768bada?q=80&w=1400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1524492412937-b28074a5d7da?q=80&w=1400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1544735716-392fe2489ffa?q=80&w=1400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1477587458883-47145ed94245?q=80&w=1400&auto=format&fit=crop',
-]
-
-const CARD_META = [
-  { badge: '12 seats left', secondaryBadge: 'High demand', tags: ['Temple mornings', 'Seva support', 'Private stays'] },
-  { badge: '8 seats left', secondaryBadge: 'Limited batch', tags: ['Meditation deck', 'Guided darshan', 'Himalayan views'] },
-  { badge: '16 seats left', secondaryBadge: 'Curated route', tags: ['Backwater calm', 'Ayurvedic meals', 'Luxury stay'] },
-  { badge: '10 seats left', secondaryBadge: 'Signature journey', tags: ['Royal heritage', 'Evening aarti', 'Palace stays'] },
-]
-
 function PremiumTravelCard({
   item,
   index,
@@ -44,7 +30,8 @@ function PremiumTravelCard({
   onPress: () => void
 }) {
   const pressScale = useSharedValue(1)
-  const meta = CARD_META[index % CARD_META.length]
+  const imageSource = item.imageUrl ? { uri: item.imageUrl } : require('../../../assets/gurudev.jpeg')
+  const seatsLeft = item.remainingSeats ?? 0
 
   const cardStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pressScale.value }],
@@ -77,7 +64,7 @@ function PremiumTravelCard({
         >
           <View style={styles.cardShell}>
           <Animated.View style={[styles.cardImageWrap, imageStyle]}>
-            <Image source={{ uri: CARD_IMAGES[index % CARD_IMAGES.length] }} style={styles.cardImage} contentFit="cover" transition={240} />
+            <Image source={imageSource} style={styles.cardImage} contentFit="cover" transition={240} />
 
             <LinearGradient
               colors={['rgba(17,10,3,0.02)', 'rgba(17,10,3,0.48)', 'rgba(17,10,3,0.78)']}
@@ -88,12 +75,14 @@ function PremiumTravelCard({
             <View style={styles.cardTopRow}>
               <View style={styles.badgePill}>
                 <MaterialIcons name="confirmation-number" size={12} color="#8B5A00" />
-                <Text style={styles.badgeText}>{meta.badge}</Text>
+                <Text style={styles.badgeText}>{seatsLeft} seats left</Text>
               </View>
-              <View style={[styles.badgePill, styles.badgePillDark]}>
-                <MaterialIcons name="whatshot" size={12} color="#fff" />
-                <Text style={[styles.badgeText, styles.badgeTextDark]}>{meta.secondaryBadge}</Text>
-              </View>
+              {seatsLeft > 0 && seatsLeft <= 10 ? (
+                <View style={[styles.badgePill, styles.badgePillDark]}>
+                  <MaterialIcons name="whatshot" size={12} color="#fff" />
+                  <Text style={[styles.badgeText, styles.badgeTextDark]}>Limited seats</Text>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.cardImageFooter}>
@@ -118,13 +107,15 @@ function PremiumTravelCard({
               </View>
             </View>
 
-            <View style={styles.tagsRow}>
-              {meta.tags.map((tag) => (
-                <View key={tag} style={styles.tagPill}>
-                  <Text style={styles.tagText}>{tag}</Text>
-                </View>
-              ))}
-            </View>
+            {item.inclusions && item.inclusions.length > 0 ? (
+              <View style={styles.tagsRow}>
+                {item.inclusions.map((tag) => (
+                  <View key={tag} style={styles.tagPill}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
 
             <View style={styles.priceRow}>
               <View>

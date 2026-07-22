@@ -3,7 +3,7 @@ import cors from 'cors'
 import express, { NextFunction, Request, Response } from 'express'
 import helmet from 'helmet'
 import { HttpError } from './errors'
-import { connectDonationDatabases } from './services/mongo'
+import { connectDonationDatabases, mainDb } from './services/mongo'
 import { supabaseAdmin } from './services/supabaseAdmin'
 import { bookingsRouter } from './routes/bookings'
 import { paymentsRouter } from './routes/payments'
@@ -39,6 +39,45 @@ app.use(cors({
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
+
+// Health Check API (unauthenticated, lightweight, suitable for VPS / load balancer probes)
+app.get(['/health', '/api/health'], async (_request: Request, response: Response) => {
+  const startTime = Date.now()
+  let supabaseStatus = 'ok'
+  let mongoStatus = 'ok'
+
+  try {
+    const { error } = await supabaseAdmin.from('travel_packages').select('id', { head: true, count: 'exact' })
+    if (error) supabaseStatus = 'error'
+  } catch (e) {
+    supabaseStatus = 'error'
+  }
+
+  try {
+    if (mainDb.readyState !== 1) {
+      mongoStatus = 'error'
+    }
+  } catch (e) {
+    mongoStatus = 'error'
+  }
+
+  const isHealthy = supabaseStatus === 'ok' && mongoStatus === 'ok'
+  const statusCode = isHealthy ? 200 : 503
+
+  response.status(statusCode).json({
+    status: isHealthy ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: process.env.npm_package_version ?? '1.0.0',
+    environment: process.env.NODE_ENV ?? 'development',
+    services: {
+      supabase: supabaseStatus,
+      mongodb: mongoStatus,
+    },
+    latencyMs: Date.now() - startTime,
+  })
+})
+
 app.use('/api/webhooks/razorpay', express.raw({ type: 'application/json' }), razorpayWebhookRouter)
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))

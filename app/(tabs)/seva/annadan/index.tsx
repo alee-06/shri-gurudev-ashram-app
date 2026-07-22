@@ -14,8 +14,7 @@ import { useRouter } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useSevaStore } from '../../../../src/store/useSevaStore'
-import { checkAnnadanAvailability } from '../../../../src/services/seva'
-import { ANNADAN_AMOUNT } from '../../../../src/constants/seva'
+import { checkAnnadanAvailability, fetchSevaPricing, fetchSevaMonthlyAvailability, DateAvailabilityInfo } from '../../../../src/services/seva'
 
 // ─── Month helpers ────────────────────────────────────────────────────────────
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -55,11 +54,24 @@ export default function AnnadanCalendarRoute() {
   const [checking, setChecking] = useState(false)
   const [availabilityMsg, setAvailabilityMsg] = useState<{ available: boolean; reason?: string } | null>(null)
   const [showCalendar, setShowCalendar] = useState(false)
+  const [annadanPrice, setAnnadanPrice] = useState<number>(2100)
+  const [monthlyAvailability, setMonthlyAvailability] = useState<Record<string, DateAvailabilityInfo>>({})
+  const [loadingMonth, setLoadingMonth] = useState(false)
 
   useEffect(() => {
+    fetchSevaPricing().then((p) => { if (p?.annadan) setAnnadanPrice(p.annadan) }).catch(() => {})
     resetSeva()
     setSevaType('annadan')
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const monthStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`
+    setLoadingMonth(true)
+    fetchSevaMonthlyAvailability('annadan', monthStr)
+      .then((map) => setMonthlyAvailability(map))
+      .catch((e) => console.error('Failed to load Annadan month availability:', e))
+      .finally(() => setLoadingMonth(false))
+  }, [viewYear, viewMonth])
 
   const cells = buildCalendar(viewYear, viewMonth)
   const isPast = (date: Date) => {
@@ -136,7 +148,7 @@ export default function AnnadanCalendarRoute() {
                 Sponsor one full day's Mahaprasad for all devotees visiting Shri Gurudev Ashram.
               </Text>
               <View style={styles.heroPricePill}>
-                <Text style={styles.heroPriceText}>₹{ANNADAN_AMOUNT.toLocaleString('en-IN')} · Full Day Sponsorship</Text>
+                <Text style={styles.heroPriceText}>₹{annadanPrice.toLocaleString('en-IN')} · Full Day Sponsorship</Text>
               </View>
             </View>
           </LinearGradient>
@@ -214,40 +226,46 @@ export default function AnnadanCalendarRoute() {
               </View>
 
               {/* Grid */}
-              <View style={styles.grid}>
-                {cells.map((date, i) => {
-                  if (!date) return <View key={`empty-${i}`} style={styles.cell} />
-                  const iso = toIso(date)
-                  const past = isPast(date)
-                  const selected = iso === selectedIso
-                  // Mock: 1st and 15th are booked
-                  const booked = date.getDate() === 1 || date.getDate() === 15
-                  const dotColor = past ? '#C04545' : booked ? '#F5C242' : '#2F7132'
-                  return (
-                    <TouchableOpacity
-                      key={iso}
-                      style={[
-                        styles.cell,
-                        selected && styles.cellSelected,
-                        (past || booked) && styles.cellPast,
-                        booked && !past && styles.cellBooked,
-                      ]}
-                      disabled={past || booked}
-                      onPress={() => void onSelectDate(date)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={[
-                        styles.cellText,
-                        selected && styles.cellTextSelected,
-                        (past || booked) && styles.cellTextPast,
-                      ]}>
-                        {date.getDate()}
-                      </Text>
-                      <View style={[styles.bookedDot, { backgroundColor: selected ? '#fff' : dotColor }]} />
-                    </TouchableOpacity>
-                  )
-                })}
-              </View>
+              {loadingMonth ? (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <ActivityIndicator color="#8B5A00" />
+                </View>
+              ) : (
+                <View style={styles.grid}>
+                  {cells.map((date, i) => {
+                    if (!date) return <View key={`empty-${i}`} style={styles.cell} />
+                    const iso = toIso(date)
+                    const past = isPast(date)
+                    const selected = iso === selectedIso
+                    const dayInfo = monthlyAvailability[iso]
+                    const booked = past ? false : (dayInfo ? !dayInfo.available : false)
+                    const dotColor = past ? '#C04545' : booked ? '#F5C242' : '#2F7132'
+                    return (
+                      <TouchableOpacity
+                        key={iso}
+                        style={[
+                          styles.cell,
+                          selected && styles.cellSelected,
+                          (past || booked) && styles.cellPast,
+                          booked && !past && styles.cellBooked,
+                        ]}
+                        disabled={past || booked}
+                        onPress={() => void onSelectDate(date)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[
+                          styles.cellText,
+                          selected && styles.cellTextSelected,
+                          (past || booked) && styles.cellTextPast,
+                        ]}>
+                          {date.getDate()}
+                        </Text>
+                        <View style={[styles.bookedDot, { backgroundColor: selected ? '#fff' : dotColor }]} />
+                      </TouchableOpacity>
+                    )
+                  })}
+                </View>
+              )}
 
               {/* Legend */}
               <View style={styles.legendRow}>

@@ -118,7 +118,7 @@ bookingsRouter.post('/', requireAuth, async (request, response, next) => {
     // 4. Package information validation
     const { data: travelPackage, error: packageError } = await supabaseAdmin
       .from('travel_packages')
-      .select('id, price, is_active, remaining_seats')
+      .select('id, price, is_active, remaining_seats, flight_price, train_ac_price, train_non_ac_price, room_ac_price, room_non_ac_price')
       .eq('id', packageId)
       .single()
 
@@ -134,17 +134,29 @@ bookingsRouter.post('/', requireAuth, async (request, response, next) => {
       throw new HttpError(400, 'Not enough seats available')
     }
 
-    const { getYatraPrice } = require('../utils/yatraPricing')
-
-    const preferencePrice = getYatraPrice(transportType, roomType, busType)
-    const expectedAmount = preferencePrice.amount * travelerCount
-    const actualAmount = Number(travelPackage.price) * travelerCount // Or whatever they pass, but we use preferencePrice
-
-    const totalAmount = expectedAmount
-
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+    const baseUnitPrice = Number(travelPackage.price)
+    if (!Number.isFinite(baseUnitPrice) || baseUnitPrice <= 0) {
       throw new HttpError(400, 'Travel package has an invalid price')
     }
+
+    let transportAddon = 0
+    if (transportType === 'Flight') {
+      transportAddon = Number(travelPackage.flight_price || 0)
+    } else if (transportType === 'Train') {
+      transportAddon = busType === 'AC Train'
+        ? Number(travelPackage.train_ac_price || 0)
+        : Number(travelPackage.train_non_ac_price || 0)
+    }
+
+    let roomAddon = 0
+    if (roomType === 'AC Room') {
+      roomAddon = Number(travelPackage.room_ac_price || 0)
+    } else if (roomType === 'Non-AC Room') {
+      roomAddon = Number(travelPackage.room_non_ac_price || 0)
+    }
+
+    const packageUnitPrice = baseUnitPrice + transportAddon + roomAddon
+    const totalAmount = packageUnitPrice * travelerCount
 
     const bookingReference = `BK${Date.now()}${Math.floor(Math.random() * 1000)}`
     const authRequest = request as AuthenticatedRequest
@@ -179,7 +191,7 @@ bookingsRouter.post('/', requireAuth, async (request, response, next) => {
     }
 
     const leadPassenger = passengers[0]
-    
+
     // 6. Application-Layer Transaction
     const { data: booking, error: bookingError } = await supabaseAdmin
       .from('bookings')
@@ -235,7 +247,7 @@ bookingsRouter.post('/', requireAuth, async (request, response, next) => {
       const documentsToInsert: any[] = []
       for (const ip of insertedPassengers) {
         const p = passengers[ip.passenger_index]
-        
+
         if (ip.passenger_index === 0 && isLeadVerified) {
           if (userProfile.aadhaar_image_path) {
             documentsToInsert.push({ passenger_id: ip.id, document_type: 'aadhaar_front', file_path: userProfile.aadhaar_image_path })

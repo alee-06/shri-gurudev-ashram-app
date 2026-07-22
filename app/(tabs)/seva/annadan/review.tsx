@@ -13,8 +13,7 @@ import { useRouter } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useSevaStore } from '../../../../src/store/useSevaStore'
-import { createSevaBooking } from '../../../../src/services/seva'
-import { ANNADAN_AMOUNT } from '../../../../src/constants/seva'
+import { createSevaBooking, fetchSevaPricing } from '../../../../src/services/seva'
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function AnnadanReviewRoute() {
@@ -28,6 +27,11 @@ export default function AnnadanReviewRoute() {
 
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState('')
+  const [annadanPrice, setAnnadanPrice] = useState(2100)
+
+  React.useEffect(() => {
+    fetchSevaPricing().then((p) => { if (p?.annadan) setAnnadanPrice(p.annadan) }).catch(() => {})
+  }, [])
 
   const displayDate = selectedDate
     ? new Date(selectedDate).toLocaleDateString('en-IN', {
@@ -44,7 +48,7 @@ export default function AnnadanReviewRoute() {
         sevaDate: selectedDate,
         fullName,
         phoneNumber,
-        totalAmount: ANNADAN_AMOUNT,
+        totalAmount: annadanPrice,
       })
       setBookingResult(booking.id, booking.bookingReference, booking.transactionId)
 
@@ -53,7 +57,7 @@ export default function AnnadanReviewRoute() {
         params: {
           sevaType: 'annadan',
           sevaBookingId: booking.id,
-          amount: String(ANNADAN_AMOUNT),
+          amount: String(annadanPrice),
           reference: booking.bookingReference,
           transactionId: booking.transactionId ?? '',
           sevaDate: selectedDate,
@@ -108,7 +112,7 @@ export default function AnnadanReviewRoute() {
           {/* Amount */}
           <View style={styles.amountBlock}>
             <Text style={styles.amountLabel}>Donation Amount</Text>
-            <Text style={styles.amountValue}>₹{ANNADAN_AMOUNT.toLocaleString('en-IN')}</Text>
+            <Text style={styles.amountValue}>₹{annadanPrice.toLocaleString('en-IN')}</Text>
             <Text style={styles.amountNote}>Fixed amount · One-time donation</Text>
           </View>
         </Animated.View>

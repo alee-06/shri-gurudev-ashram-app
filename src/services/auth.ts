@@ -8,8 +8,8 @@ import {
 } from "@react-native-firebase/auth";
 import * as SecureStore from "expo-secure-store";
 import { useAuthStore } from "../store/useAuthStore";
+import { getBaseUrl } from "../utils/config";
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:3000";
 const FIREBASE_TOKEN_KEY = "shri_gurudev_firebase_id_token";
 const DONATION_TOKEN_KEY = "shri_gurudev_donation_jwt";
 
@@ -50,22 +50,31 @@ function mapUser(row: any): AuthUser {
   };
 }
 async function request(path: string, init: RequestInit = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error ?? "Request failed");
-  return body;
+  const baseUrl = getBaseUrl();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? "Request failed");
+    return body;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
-async function finishFirebaseUser(user: User) {
-  const token = await getIdToken(user, true);
+async function finishFirebaseUser(user: User, forceRefresh = false) {
+  const token = await getIdToken(user, forceRefresh);
   await SecureStore.setItemAsync(FIREBASE_TOKEN_KEY, token);
   const donation = await request("/api/auth/verify-firebase-token", {
     method: "POST",
     body: JSON.stringify({ token }),
   });
-  if (donation.token)
+  if (donation?.token)
     await SecureStore.setItemAsync(DONATION_TOKEN_KEY, donation.token);
   const profile = await request("/api/users/me", {
     headers: { Authorization: `Bearer ${token}` },
@@ -85,7 +94,7 @@ export async function confirmPhoneOtp(
   const result = await confirmation.confirm(code);
   const user = result?.user;
   if (!user) throw new Error("Firebase did not return a user");
-  return finishFirebaseUser(user);
+  return finishFirebaseUser(user, true);
 }
 export async function authenticatePhone(phone: string): Promise<any> {
   return requestPhoneOtp(phone);
@@ -102,7 +111,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   const user = auth.currentUser;
   if (!user) return null;
   try {
-    return await finishFirebaseUser(user);
+    return await finishFirebaseUser(user, false);
   } catch {
     return null;
   }

@@ -23,7 +23,7 @@ import { refreshCurrentUser } from '../../services/auth'
 import { uploadAadhaar, uploadSelfie } from '../../services/verification'
 import { useAuthStore } from '../../store/useAuthStore'
 import { useBookingDraftStore } from '../../store/useBookingDraftStore'
-import { BusType, RoomType, TransportType, getYatraPrice } from '../../utils/yatraPricing'
+import { BusType, RoomType, TransportType } from '../../utils/yatraPricing'
 import { getFriendlyApiError } from '../../utils/apiErrors'
 import { isNonEmptyString, isValidPhoneNumber, normalizeDigits, isValidAadhaarNumber } from '../../utils/validation'
 import ImageUploadWidget from '../../components/ImageUploadWidget'
@@ -109,14 +109,16 @@ function ChoiceCard({
   title,
   description,
   icon,
+  priceBadge,
   selected,
   onPress,
 }: {
   title: string
   description: string
-  icon?: string
   selected: boolean
   onPress: () => void
+  icon?: string
+  priceBadge?: string
 }) {
   return (
     <Pressable
@@ -136,7 +138,14 @@ function ChoiceCard({
           )}
         </View>
         <View style={styles.choiceCopy}>
-          <Text style={[styles.choiceTitle, selected && styles.choiceTitleSelected]}>{title}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[styles.choiceTitle, selected && styles.choiceTitleSelected]}>{title}</Text>
+            {priceBadge ? (
+              <View style={{ backgroundColor: selected ? '#ffffff33' : COLORS.chip, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 6 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: selected ? '#ffffff' : COLORS.primaryDark }}>{priceBadge}</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.choiceDescription}>{description}</Text>
         </View>
         <View style={[styles.radio, selected && styles.radioSelected]}>{selected ? <View style={styles.radioInner} /> : null}</View>
@@ -158,7 +167,7 @@ const PassengerCard = React.memo(({ index, currentUser, isSubmitting, fieldError
   return (
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>{isLead ? 'Lead Traveler' : `Traveler ${index + 1}`}</Text>
-      
+
       <InputField label="Full Name" value={passenger.fullName} onChangeText={(value) => updatePassengerField(index, 'fullName', value)} placeholder="Enter complete legal name" errorMessage={fieldErrors[`p_${index}_fullName`]} />
       <View style={styles.row}>
         <View style={styles.flexItem}>
@@ -191,7 +200,7 @@ const PassengerCard = React.memo(({ index, currentUser, isSubmitting, fieldError
 
       <Text style={styles.groupLabel}>Gender</Text>
       <View style={styles.choiceList}>
-        {[ { value: 'male', title: 'Male' }, { value: 'female', title: 'Female' }, { value: 'other', title: 'Other' }].map((option) => (
+        {[{ value: 'male', title: 'Male' }, { value: 'female', title: 'Female' }, { value: 'other', title: 'Other' }].map((option) => (
           <ChoiceCard
             key={option.value}
             title={option.title}
@@ -264,8 +273,8 @@ export default function BookingForm() {
   const selectedPackage = useBookingDraftStore((state) => state.selectedPackage)
   const [stepIndex, setStepIndex] = useState(0)
   const [activeDatePickerIndex, setActiveDatePickerIndex] = useState<number | null>(null)
-  
-  const activeDob = useBookingDraftStore((state) => 
+
+  const activeDob = useBookingDraftStore((state) =>
     activeDatePickerIndex !== null ? state.passengers[activeDatePickerIndex]?.dob : null
   )
 
@@ -281,12 +290,26 @@ export default function BookingForm() {
   const busType = busTypeState || 'AC Train'
   const roomType = roomTypeState || 'AC Room'
   const travelerCount = useMemo(() => parseTravelerCount(numberOfTravelersState), [numberOfTravelersState])
-  const packageUnitAmount = selectedPackage?.priceAmount || parsePriceAmount(selectedPackage?.price)
-  const preferencePricing = useMemo(
-    () => getYatraPrice(transportType as TransportType, roomType as RoomType, busType as BusType),
-    [transportType, roomType, busType],
-  )
-  const totalAmount = useMemo(() => preferencePricing.amount * travelerCount, [preferencePricing.amount, travelerCount])
+
+  const transportAddon = useMemo(() => {
+    if (transportType === 'Flight') return selectedPackage?.flightPrice || 0
+    if (transportType === 'Train') {
+      return busType === 'AC Train'
+        ? (selectedPackage?.trainAcPrice || 0)
+        : (selectedPackage?.trainNonAcPrice || 0)
+    }
+    return 0
+  }, [transportType, busType, selectedPackage])
+
+  const roomAddon = useMemo(() => {
+    return roomType === 'AC Room'
+      ? (selectedPackage?.roomAcPrice || 0)
+      : (selectedPackage?.roomNonAcPrice || 0)
+  }, [roomType, selectedPackage])
+
+  const baseUnitPrice = selectedPackage?.priceAmount || parsePriceAmount(selectedPackage?.price)
+  const packageUnitAmount = useMemo(() => baseUnitPrice + transportAddon + roomAddon, [baseUnitPrice, transportAddon, roomAddon])
+  const totalAmount = useMemo(() => packageUnitAmount * travelerCount, [packageUnitAmount, travelerCount])
   const step = STEP_TITLES[stepIndex]
 
   useEffect(() => {
@@ -374,7 +397,7 @@ export default function BookingForm() {
     try {
       const draft = useBookingDraftStore.getState()
       const isLeadVerified = ['submitted', 'verified'].includes(refreshedUser.verificationStatus)
-      
+
       const passengersWithDocs = await Promise.all(draft.passengers.map(async (p, i) => {
         let aadhaarImagePath = ''
         let selfieImagePath = ''
@@ -447,9 +470,9 @@ export default function BookingForm() {
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView 
+        <ScrollView
           ref={scrollViewRef}
-          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 24) }]} 
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 24) }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -483,14 +506,16 @@ export default function BookingForm() {
                 {transportType === 'Train' ? ` (${busType})` : ''} / <Text style={styles.boldText}>{roomType}</Text>
               </Text>
             </View>
-            <View style={styles.inclusionsRow}>
-              {preferencePricing.inclusions.map((inclusion) => (
-                <View key={inclusion} style={styles.inclusionBadge}>
-                  <Ionicons name="checkmark-circle-outline" size={12} color={COLORS.primary} />
-                  <Text style={styles.inclusionText}>{inclusion}</Text>
-                </View>
-              ))}
-            </View>
+            {selectedPackage?.inclusions && selectedPackage.inclusions.length > 0 ? (
+              <View style={styles.inclusionsRow}>
+                {selectedPackage.inclusions.map((inclusion) => (
+                  <View key={inclusion} style={styles.inclusionBadge}>
+                    <Ionicons name="checkmark-circle-outline" size={12} color={COLORS.primary} />
+                    <Text style={styles.inclusionText}>{inclusion}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.stepperContainer}>
@@ -525,21 +550,27 @@ export default function BookingForm() {
                   <Text style={styles.sectionSubtitle}>Select the sacred route arrival option for this yatra.</Text>
                 </View>
                 <View style={styles.choiceList}>
-                  {TRANSPORT_OPTIONS.map((option) => (
-                    <ChoiceCard
-                      key={option.value}
-                      title={option.title}
-                      description={option.description}
-                      icon={option.icon}
-                      selected={transportType === option.value}
-                      onPress={() => {
-                        updateField('transportType', option.value)
-                        if (option.value === 'Flight') {
-                          updateField('busType', 'AC Train')
-                        }
-                      }}
-                    />
-                  ))}
+                  {TRANSPORT_OPTIONS.map((option) => {
+                    const priceBadge = option.value === 'Flight'
+                      ? (selectedPackage?.flightPrice ? `+₹${selectedPackage.flightPrice.toLocaleString('en-IN')}` : undefined)
+                      : undefined
+                    return (
+                      <ChoiceCard
+                        key={option.value}
+                        title={option.title}
+                        description={option.description}
+                        icon={option.icon}
+                        priceBadge={priceBadge}
+                        selected={transportType === option.value}
+                        onPress={() => {
+                          updateField('transportType', option.value)
+                          if (option.value === 'Flight') {
+                            updateField('busType', 'AC Train')
+                          }
+                        }}
+                      />
+                    )
+                  })}
                 </View>
                 <PrimaryButton title="Continue" onPress={() => setStepIndex(1)} />
               </View>
@@ -556,30 +587,42 @@ export default function BookingForm() {
                   <>
                     <Text style={styles.groupLabel}>Sadhak coach options</Text>
                     <View style={styles.choiceList}>
-                      {TRAIN_OPTIONS.map((option) => (
-                        <ChoiceCard
-                          key={option.value}
-                          title={option.title}
-                          description={option.description}
-                          selected={busType === option.value}
-                          onPress={() => updateField('busType', option.value)}
-                        />
-                      ))}
+                      {TRAIN_OPTIONS.map((option) => {
+                        const priceBadge = option.value === 'AC Train'
+                          ? (selectedPackage?.trainAcPrice ? `+₹${selectedPackage.trainAcPrice.toLocaleString('en-IN')}` : undefined)
+                          : (selectedPackage?.trainNonAcPrice ? `+₹${selectedPackage.trainNonAcPrice.toLocaleString('en-IN')}` : undefined)
+                        return (
+                          <ChoiceCard
+                            key={option.value}
+                            title={option.title}
+                            description={option.description}
+                            priceBadge={priceBadge}
+                            selected={busType === option.value}
+                            onPress={() => updateField('busType', option.value)}
+                          />
+                        )
+                      })}
                     </View>
                   </>
                 ) : null}
 
                 <Text style={styles.groupLabel}>Ashram stay options</Text>
                 <View style={styles.choiceList}>
-                  {ROOM_OPTIONS.map((option) => (
-                    <ChoiceCard
-                      key={option.value}
-                      title={option.title}
-                      description={option.description}
-                      selected={roomType === option.value}
-                      onPress={() => updateField('roomType', option.value)}
-                    />
-                  ))}
+                  {ROOM_OPTIONS.map((option) => {
+                    const priceBadge = option.value === 'AC Room'
+                      ? (selectedPackage?.roomAcPrice ? `+₹${selectedPackage.roomAcPrice.toLocaleString('en-IN')}` : undefined)
+                      : (selectedPackage?.roomNonAcPrice ? `+₹${selectedPackage.roomNonAcPrice.toLocaleString('en-IN')}` : undefined)
+                    return (
+                      <ChoiceCard
+                        key={option.value}
+                        title={option.title}
+                        description={option.description}
+                        priceBadge={priceBadge}
+                        selected={roomType === option.value}
+                        onPress={() => updateField('roomType', option.value)}
+                      />
+                    )
+                  })}
                 </View>
 
                 <View style={styles.actionRow}>

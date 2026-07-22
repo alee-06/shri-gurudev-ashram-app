@@ -5,6 +5,14 @@ export type TravelPackage = {
   priceAmount?: number;
   duration: string;
   description: string;
+  remainingSeats?: number;
+  inclusions?: string[];
+  imageUrl?: string | null;
+  flightPrice?: number;
+  trainAcPrice?: number;
+  trainNonAcPrice?: number;
+  roomAcPrice?: number;
+  roomNonAcPrice?: number;
 };
 
 export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'payment_pending' | 'paid';
