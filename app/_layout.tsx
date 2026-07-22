@@ -20,7 +20,8 @@ export default function RootLayout() {
 
     const syncSession = async () => {
       try {
-        const currentUser = await getCurrentUser()
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))
+        const currentUser = await Promise.race([getCurrentUser(), timeoutPromise])
 
         if (!isMounted) {
           return

@@ -154,15 +154,159 @@ sevaRouter.get('/history', requireAuth, async (request, response, next) => {
   }
 })
 
+sevaRouter.get('/pricing', async (_request, response, next) => {
+  try {
+    const annadanAmount = Number(process.env.ANNADAN_SEVA_PRICE ?? 2100)
+    const yajmanAmount = Number(process.env.YAJMAN_SEVA_PRICE ?? 5100)
+
+    response.json({
+      success: true,
+      pricing: {
+        annadan: annadanAmount,
+        yajman: yajmanAmount,
+      },
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+sevaRouter.get('/availability', async (request, response, next) => {
+  try {
+    const type = ((request.query.type as string) || '').toLowerCase()
+    const month = request.query.month as string // e.g. "2026-07"
+
+    if (!type || (type !== 'annadan' && type !== 'yajman')) {
+      throw new HttpError(400, 'type query parameter is required (annadan or yajman)')
+    }
+
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      throw new HttpError(400, 'month query parameter is required (format YYYY-MM)')
+    }
+
+    const [yearStr, monthStr] = month.split('-')
+    const year = Number(yearStr)
+    const monthNum = Number(monthStr)
+    const startDate = `${month}-01`
+    const lastDayNum = new Date(year, monthNum, 0).getDate()
+    const endDate = `${month}-${String(lastDayNum).padStart(2, '0')}`
+
+    const { data: bookings, error } = await supabaseAdmin
+      .from('seva_bookings')
+      .select('seva_date, status')
+      .eq('seva_type', type)
+      .gte('seva_date', startDate)
+      .lte('seva_date', endDate)
+      .in('status', ['paid', 'payment_pending'])
+
+    if (error) {
+      console.error('Error fetching monthly availability:', error)
+      throw new HttpError(500, 'Failed to fetch monthly availability')
+    }
+
+    const countsByDate: Record<string, number> = {}
+    if (bookings) {
+      for (const b of bookings) {
+        if (b.seva_date) {
+          countsByDate[b.seva_date] = (countsByDate[b.seva_date] || 0) + 1
+        }
+      }
+    }
+
+    const envCapKey = `SEVA_CAPACITY_${type.toUpperCase()}`
+    const defaultCapacity = type === 'annadan' ? 100 : 50
+    const capacity = Number(process.env[envCapKey] ?? defaultCapacity)
+
+    const availabilityMap: Record<string, { booked: number; capacity: number; remaining: number; available: boolean }> = {}
+
+    for (let day = 1; day <= lastDayNum; day++) {
+      const dateKey = `${month}-${String(day).padStart(2, '0')}`
+      const booked = countsByDate[dateKey] || 0
+      const remaining = Math.max(0, capacity - booked)
+      availabilityMap[dateKey] = {
+        booked,
+        capacity,
+        remaining,
+        available: remaining > 0,
+      }
+    }
+
+    response.json({
+      success: true,
+      type,
+      month,
+      availability: availabilityMap,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 sevaRouter.get('/:type/availability', async (request, response, next) => {
   try {
-    // For now, always return available. Real implementation could check capacity limits
-    // in the seva_bookings table.
     const type = request.params.type
+    const month = request.query.month as string
     const date = request.query.date as string
 
+    const envCapKey = `SEVA_CAPACITY_${type.toUpperCase()}`
+    const defaultCapacity = type === 'annadan' ? 100 : 50
+    const capacity = Number(process.env[envCapKey] ?? defaultCapacity)
+
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const [yearStr, monthStr] = month.split('-')
+      const year = Number(yearStr)
+      const monthNum = Number(monthStr)
+      const startDate = `${month}-01`
+      const lastDayNum = new Date(year, monthNum, 0).getDate()
+      const endDate = `${month}-${String(lastDayNum).padStart(2, '0')}`
+
+      const { data: bookings, error } = await supabaseAdmin
+        .from('seva_bookings')
+        .select('seva_date, status')
+        .eq('seva_type', type)
+        .gte('seva_date', startDate)
+        .lte('seva_date', endDate)
+        .in('status', ['paid', 'payment_pending'])
+
+      if (error) {
+        console.error('Error fetching monthly availability:', error)
+        throw new HttpError(500, 'Failed to fetch monthly availability')
+      }
+
+      const countsByDate: Record<string, number> = {}
+      if (bookings) {
+        for (const b of bookings) {
+          if (b.seva_date) {
+            countsByDate[b.seva_date] = (countsByDate[b.seva_date] || 0) + 1
+          }
+        }
+      }
+
+      const availabilityMap: Record<string, { booked: number; capacity: number; remaining: number; available: boolean }> = {}
+
+      for (let day = 1; day <= lastDayNum; day++) {
+        const dateKey = `${month}-${String(day).padStart(2, '0')}`
+        const booked = countsByDate[dateKey] || 0
+        const remaining = Math.max(0, capacity - booked)
+        availabilityMap[dateKey] = {
+          booked,
+          capacity,
+          remaining,
+          available: remaining > 0,
+        }
+      }
+
+      response.json({
+        success: true,
+        type,
+        month,
+        availability: availabilityMap,
+      })
+      return
+    }
+
     if (!date) {
-      throw new HttpError(400, 'Date parameter is required')
+      throw new HttpError(400, 'Date or month parameter is required')
     }
 
     const { count, error } = await supabaseAdmin
@@ -177,8 +321,7 @@ sevaRouter.get('/:type/availability', async (request, response, next) => {
       throw new HttpError(500, 'Failed to check availability')
     }
 
-    const MAX_CAPACITY = type === 'annadan' ? 100 : 50
-    const availableSeats = MAX_CAPACITY - (count || 0)
+    const availableSeats = capacity - (count || 0)
 
     response.json({
       available: availableSeats > 0,

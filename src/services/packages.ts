@@ -9,6 +9,16 @@ type PackageRow = {
   duration?: string | null
   duration_label?: string | null
   price?: string | number | null
+  remaining_seats?: number | null
+  remainingSeats?: number | null
+  inclusions?: string[] | string | null
+  image_url?: string | null
+  imageUrl?: string | null
+  flight_price?: number | string | null
+  train_ac_price?: number | string | null
+  train_non_ac_price?: number | string | null
+  room_ac_price?: number | string | null
+  room_non_ac_price?: number | string | null
 }
 
 function parsePriceAmount(price: string | number | null | undefined) {
@@ -34,6 +44,19 @@ function formatPrice(price: string | number | null | undefined) {
   return 'INR 0'
 }
 
+function parseInclusions(inclusions: string[] | string | null | undefined): string[] {
+  if (Array.isArray(inclusions)) return inclusions
+  if (typeof inclusions === 'string' && inclusions.trim()) {
+    try {
+      const parsed = JSON.parse(inclusions)
+      if (Array.isArray(parsed)) return parsed
+    } catch {
+      return inclusions.split(',').map((s) => s.trim()).filter(Boolean)
+    }
+  }
+  return []
+}
+
 function mapPackageRow(row: PackageRow): TravelPackage {
   return {
     id: String(row.id),
@@ -42,6 +65,14 @@ function mapPackageRow(row: PackageRow): TravelPackage {
     duration: row.duration ?? row.duration_label ?? 'Duration TBA',
     price: formatPrice(row.price),
     priceAmount: parsePriceAmount(row.price),
+    remainingSeats: row.remaining_seats ?? row.remainingSeats ?? 0,
+    inclusions: parseInclusions(row.inclusions),
+    imageUrl: row.image_url ?? row.imageUrl ?? null,
+    flightPrice: parsePriceAmount(row.flight_price),
+    trainAcPrice: parsePriceAmount(row.train_ac_price),
+    trainNonAcPrice: parsePriceAmount(row.train_non_ac_price),
+    roomAcPrice: parsePriceAmount(row.room_ac_price),
+    roomNonAcPrice: parsePriceAmount(row.room_non_ac_price),
   }
 }
 

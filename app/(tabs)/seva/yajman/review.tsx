@@ -13,8 +13,7 @@ import { useRouter } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useSevaStore } from '../../../../src/store/useSevaStore'
-import { createSevaBooking } from '../../../../src/services/seva'
-import { YAJMAN_AMOUNT } from '../../../../src/constants/seva'
+import { createSevaBooking, fetchSevaPricing } from '../../../../src/services/seva'
 
 export default function YajmanReviewRoute() {
   const router = useRouter()
@@ -27,6 +26,11 @@ export default function YajmanReviewRoute() {
 
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState('')
+  const [yajmanPrice, setYajmanPrice] = useState(5100)
+
+  React.useEffect(() => {
+    fetchSevaPricing().then((p) => { if (p?.yajman) setYajmanPrice(p.yajman) }).catch(() => {})
+  }, [])
 
   const displayDate = selectedDate
     ? new Date(selectedDate).toLocaleDateString('en-IN', {
@@ -43,7 +47,7 @@ export default function YajmanReviewRoute() {
         sevaDate: selectedDate,
         fullName,
         phoneNumber,
-        totalAmount: YAJMAN_AMOUNT,
+        totalAmount: yajmanPrice,
       })
       setBookingResult(booking.id, booking.bookingReference, booking.transactionId)
 
@@ -52,7 +56,7 @@ export default function YajmanReviewRoute() {
         params: {
           sevaType: 'yajman',
           sevaBookingId: booking.id,
-          amount: String(YAJMAN_AMOUNT),
+          amount: String(yajmanPrice),
           reference: booking.bookingReference,
           transactionId: booking.transactionId ?? '',
           sevaDate: selectedDate,
@@ -104,7 +108,7 @@ export default function YajmanReviewRoute() {
 
           <View style={styles.amountBlock}>
             <Text style={styles.amountLabel}>Donation Amount</Text>
-            <Text style={styles.amountValue}>₹{YAJMAN_AMOUNT.toLocaleString('en-IN')}</Text>
+            <Text style={styles.amountValue}>₹{yajmanPrice.toLocaleString('en-IN')}</Text>
             <Text style={styles.amountNote}>Fixed amount · Confirm with Ashram if changed</Text>
           </View>
         </Animated.View>

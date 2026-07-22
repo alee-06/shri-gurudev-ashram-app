@@ -1,9 +1,30 @@
 import type { SevaType } from '../constants/seva';
-import { generateSevaReference, generateTransactionId, getSevaAmount } from '../constants/seva';
 import type { CreateSevaBookingInput, SevaBooking, UpcomingSeva } from '../types/seva';
 import { useSevaStore } from '../store/useSevaStore';
 
 import api from '../api/axiosClient';
+
+export type DateAvailabilityInfo = {
+  booked: number;
+  capacity: number;
+  remaining: number;
+  available: boolean;
+};
+
+// ─── Fetch Dynamic Seva Pricing ─────────────────────────────────────────────
+export async function fetchSevaPricing(): Promise<Record<SevaType, number>> {
+  const { data } = await api.get('/api/seva/pricing');
+  return data.pricing;
+}
+
+// ─── Fetch Monthly Seva Availability ─────────────────────────────────────────
+export async function fetchSevaMonthlyAvailability(
+  type: SevaType,
+  month: string,
+): Promise<Record<string, DateAvailabilityInfo>> {
+  const { data } = await api.get(`/api/seva/availability?type=${type}&month=${month}`);
+  return data.availability || {};
+}
 
 // ─── Create a Seva Booking ─────────────────────────────────────────────
 export async function createSevaBooking(
@@ -57,6 +78,3 @@ export async function checkYajmanAvailability(
   const { data } = await api.get(`/api/seva/yajman/availability?date=${date}`);
   return data;
 }
-
-// ─── Amount helper (convenience re-export) ────────────────────────────────────
-export { getSevaAmount };

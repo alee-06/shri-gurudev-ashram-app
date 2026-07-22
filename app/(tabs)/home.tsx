@@ -284,7 +284,6 @@ function InfoAccordionCard({
           </Reanimated.View>
         ))}
       </Reanimated.View>
-
       {section.items.length > visibleItems.length ? <Text style={styles.previewHint}>Tap the arrow to view more</Text> : null}
 
       <TouchableOpacity onPress={onToggle} style={styles.expandButton} activeOpacity={0.8}>
@@ -300,7 +299,6 @@ export default function HomeRoute() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const user = useAuthStore((s) => s.user)
-  const isCollector = Boolean(user)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const drawerAnim = useRef(new Animated.Value(0)).current
@@ -398,13 +396,17 @@ export default function HomeRoute() {
 
           <View style={styles.grid}>
             {ASHRAM_SERVICES_CONFIG
-              .filter((s) => s.enabled && (s.id !== 'collector' || isCollector))
+              .filter((s) => s.enabled)
               .map((item) => (
               <TouchableOpacity
                 key={item.id}
                 style={styles.card}
                 onPress={() => {
+                  if (!user && (item.id === 'collector' || item.id === 'activity')) {
+                    router.push({ pathname: '/(auth)/login', params: { returnTo: item.route } } as never)
+                  } else {
                     router.push(item.route as never)
+                  }
                 }}
                 activeOpacity={0.86}
               >

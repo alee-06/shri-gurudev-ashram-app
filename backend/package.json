@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "tsx --env-file=backend/.env backend/src/server.ts",
-    "dev": "tsx watch --env-file=backend/.env backend/src/server.ts"
+    "start": "tsx --env-file=.env ./src/server.ts",
+    "dev": "tsx watch --env-file=.env ./src/server.ts"
   },
   "dependencies": {
     "@react-native-firebase/app": "^25.1.0",

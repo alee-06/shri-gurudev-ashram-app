@@ -101,9 +101,9 @@ export default function ProfileRoute() {
 
   const handleLogout = async () => {
     try {
+      router.replace('/(tabs)/home' as never)
       await signOut()
       clearLocalSession()
-      router.replace('/(auth)/splash' as never)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not log out right now.')
     }
@@ -115,10 +115,10 @@ export default function ProfileRoute() {
 
     try {
       await softDeleteCurrentUser()
+      router.replace('/(tabs)/home' as never)
       await signOut()
       clearLocalSession()
       setShowDeleteConfirm(false)
-      router.replace('/(auth)/splash' as never)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not delete your account right now.')
     } finally {
